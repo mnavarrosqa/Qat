@@ -8,6 +8,11 @@ export function config() {
     jiraEmail: process.env.JIRA_EMAIL || '',
     jiraToken: process.env.JIRA_API_TOKEN || '',
     xrayEnabled: process.env.XRAY_ENABLED !== 'false',
+    xrayProjectKey: process.env.XRAY_PROJECT_KEY || '',
+    xrayTestIssueType: process.env.XRAY_TEST_ISSUE_TYPE || 'Test',
+    xrayLinkType: process.env.XRAY_LINK_TYPE || 'Tests',
+    xrayTestTypeField: process.env.XRAY_TEST_TYPE_FIELD || '',
+    xrayTestTypeValue: process.env.XRAY_TEST_TYPE_VALUE || 'Manual',
     tokenBudget: Number(process.env.TOKEN_BUDGET || 12000),
   };
 }
