@@ -6,7 +6,7 @@ Funciona **sin API de Claude**: usa Claude CLI cuando la empresa ya provee acces
 
 ## Estado actual
 
-Versión **0.5.0**.
+Versión **0.6.0**.
 
 > Para instalación y uso paso a paso consultá [`docs/MANUAL.md`](docs/MANUAL.md).
 
@@ -24,7 +24,7 @@ npm run setup
 
 El setup pregunta si usás Xray y si tenés acceso por API. Si no tenés API, Qat configura automáticamente modo `export` y genera CSV/JSON importable en `artifacts/`.
 
-Después completá Jira y el ambiente en `.env`:
+Después completá Jira en `.env`:
 
 ```env
 LLM_PROVIDER=claude-cli
@@ -32,11 +32,6 @@ CLAUDE_COMMAND=claude
 JIRA_BASE_URL=https://tuempresa.atlassian.net
 JIRA_EMAIL=tu.email@empresa.com
 JIRA_API_TOKEN=tu_token
-
-QAT_ENV=qa
-QAT_BASE_URL=https://qa.tuapp.com
-QAT_USER=usuario_qa
-QAT_PASSWORD=password_qa
 ```
 
 `.env` está ignorado por Git. Nunca guardes passwords/tokens reales en el repositorio.
@@ -70,8 +65,6 @@ En modo API, Qat crea/actualiza los Tests. En modo export, genera por ejemplo:
 artifacts/QA-123-xray-import.csv
 ```
 
-El CSV incluye campos base para mapear durante el import en Jira/Xray: Summary, Issue Type, Description, Labels, Test Type, Priority, Source Issue y Case ID.
-
 ## Hablale a Qat
 
 ```bash
@@ -86,17 +79,70 @@ No necesitás escribir exactamente esas frases. Qat intenta reconocer pedidos co
 
 Claude interpreta **qué querés hacer**; el código de Qat ejecuta las operaciones reales contra Jira/Xray o genera los artifacts correspondientes.
 
+## Ambientes y perfiles
+
+Desde v0.6 Qat separa **ambiente** de **perfil de credenciales**.
+
+Un ambiente representa dónde probás:
+
+```text
+qa
+staging
+dev
+```
+
+Un perfil representa con qué identidad probás:
+
+```text
+qa/admin
+qa/customer
+qa/readonly
+staging/admin
+```
+
+Esto permite tener varios ambientes o un único ambiente con muchos usuarios/passwords sin duplicar URLs.
+
+Configuración recomendada:
+
+```bash
+mkdir -p .qat
+cp .qat/environments.example.json .qat/environments.json
+```
+
+`.qat/environments.json` está ignorado por Git. En `.env` sólo queda la selección activa:
+
+```env
+QAT_ENVIRONMENTS_FILE=.qat/environments.json
+QAT_ENV=qa
+QAT_PROFILE=admin
+```
+
+Comandos:
+
+```bash
+npm run qat -- env list
+npm run qat -- env show
+npm run qat -- env use qa admin
+npm run qat -- env use qa customer
+npm run qat -- env use staging qa-user
+```
+
+Qat nunca imprime la password. Si no existe `.qat/environments.json`, sigue funcionando el formato anterior con `QAT_BASE_URL`, `QAT_USER` y `QAT_PASSWORD`.
+
+Guía completa: [`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md).
+
 ## Flujo diario
 
-1. Pedí que analice el ticket y genere casos.
-2. Revisá casos, cobertura y ambigüedades.
-3. Pedí crear los tests en Xray.
-4. Con API se sincronizan; sin API se genera el archivo importable.
-5. Ejecutá las pruebas manuales.
-6. Registrá PASS/FAIL/BLOCKED/TODO y evidencia.
-7. Publicá el Test Execution cuando corresponda.
+1. Elegí ambiente/perfil si necesitás cambiar de contexto.
+2. Pedí que analice el ticket y genere casos.
+3. Revisá casos, cobertura y ambigüedades.
+4. Pedí crear los tests en Xray.
+5. Con API se sincronizan; sin API se genera el archivo importable.
+6. Ejecutá las pruebas manuales.
+7. Registrá PASS/FAIL/BLOCKED/TODO y evidencia.
+8. Publicá el Test Execution cuando corresponda.
 
-En v0.5, el paso de Test Execution todavía usa `execution.json` para evitar interpretar incorrectamente resultados sensibles:
+En v0.6, el paso de Test Execution todavía usa `execution.json` para evitar interpretar incorrectamente resultados sensibles:
 
 ```bash
 cp examples/execution.example.json execution.json
@@ -104,24 +150,13 @@ npm run qat -- execute QA-123 execution.json --dry-run
 npm run qat -- execute QA-123 execution.json
 ```
 
-## Ambientes y credenciales
-
-Un ambiente activo por `.env`:
-
-```env
-QAT_ENV=qa
-QAT_BASE_URL=https://qa.tuapp.com
-QAT_USER=usuario_qa
-QAT_PASSWORD=password_qa
-```
-
-Para staging cambiás esos valores. Usuario/password son opcionales.
+## Doctor
 
 ```bash
 npm run doctor
 ```
 
-`doctor` muestra el ambiente y si las credenciales están configuradas, pero nunca muestra passwords/tokens. También informa el modo activo de Xray.
+`doctor` muestra el ambiente y perfil activos y si las credenciales están configuradas, pero nunca muestra passwords/tokens. También informa el modo activo de Xray.
 
 ## Comandos clásicos
 
@@ -129,6 +164,9 @@ npm run doctor
 npm run setup
 npm run doctor
 npm test
+npm run qat -- env list
+npm run qat -- env show
+npm run qat -- env use qa admin
 npm run qat -- generate QA-123 [--save]
 npm run qat -- xray-sync QA-123 [--dry-run] [--save]
 npm run qat -- execute QA-123 execution.json [--dry-run]
@@ -162,6 +200,7 @@ CLAUDE_COMMAND=mi-claude-corporativo
 ## Seguridad
 
 - `.env` ignorado por Git;
+- `.qat/environments.json` ignorado por Git;
 - passwords/tokens no se imprimen;
 - secretos no se envían a Claude;
 - evidencias no se envían al LLM;
@@ -177,40 +216,47 @@ src/
   setup.js
   natural.js
   config.js
+  environments.js
   jira.js
   llm.js
   prompts.js
   cache.js
   xray.js
   execution.js
+.qat/
+  environments.example.json
 test/
 examples/
 docs/
   MANUAL.md
+  ENVIRONMENTS.md
 artifacts/
 evidence/
 ```
 
-## Limitaciones v0.5
+## Limitaciones v0.6
 
 - Test Execution completo todavía usa JSON;
+- selección de ambientes/perfiles ya está disponible por comandos clásicos; interpretación por lenguaje natural queda pendiente;
 - Jira Cloud REST API v3; Server/Data Center necesitará adapter;
 - Xray puede tener custom fields/nombres distintos según instalación;
-- el CSV exportable usa campos base y puede requerir mapeo durante el import;
 - el adapter nativo de Xray Cloud todavía está pendiente;
 - Test Runs nativos de Xray siguen pendientes.
 
 ## Roadmap inmediato
 
-1. resultados y evidencias completamente por lenguaje natural;
-2. adapter nativo para Xray Cloud;
-3. perfiles configurables de importación CSV/JSON;
-4. Test Runs nativos de Xray;
-5. Test Plans y suites;
-6. optimización continua del consumo de tokens.
+1. cambio de ambiente/perfil por lenguaje natural;
+2. resultados y evidencias completamente por lenguaje natural;
+3. adapter nativo para Xray Cloud;
+4. perfiles configurables de importación CSV/JSON;
+5. Test Runs nativos de Xray;
+6. Test Plans y suites;
+7. optimización continua del consumo de tokens.
 
 ## Documentación
 
 - [`docs/MANUAL.md`](docs/MANUAL.md): instalación, setup, configuración, flujo diario, seguridad y troubleshooting.
+- [`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md): múltiples ambientes y perfiles de credenciales.
 - [`.env.example`](.env.example): configuración de referencia.
+- [`.qat/environments.example.json`](.qat/environments.example.json): ejemplo de ambientes y usuarios de prueba.
 - [`examples/execution.example.json`](examples/execution.example.json): ejemplo de Test Execution.
