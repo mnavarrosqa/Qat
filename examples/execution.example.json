@@ -1,13 +1,16 @@
 {
+  "summary": "Regression login - QA-123",
   "tests": [
     {
       "id": "TC-001",
+      "key": "QA-501",
       "title": "Login con credenciales válidas",
       "status": "PASS",
       "note": "Login y redirección correctos"
     },
     {
       "id": "TC-002",
+      "key": "QA-502",
       "title": "Login con password inválido",
       "status": "FAIL",
       "note": "No se muestra el mensaje esperado",
@@ -17,6 +20,7 @@
     },
     {
       "id": "TC-003",
+      "key": "QA-503",
       "title": "Usuario bloqueado",
       "status": "BLOCKED",
       "note": "No hay usuario bloqueado disponible en QA"
