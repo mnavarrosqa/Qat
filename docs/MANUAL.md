@@ -1,6 +1,6 @@
 # Manual de Qat
 
-Este manual explica el flujo diario de Qat sin entrar en detalles internos. La idea es que un QA pueda instalarlo y empezar a usarlo rápidamente.
+Este manual explica el flujo diario de Qat sin entrar en detalles internos. La idea es que un QA manual pueda instalarlo y empezar a usarlo rápidamente.
 
 ## 1. Instalar
 
@@ -9,7 +9,7 @@ Requisitos:
 - Node.js 18 o superior.
 - Claude CLI instalado y autenticado.
 - Acceso a Jira Cloud.
-- Xray configurado en Jira para las funciones de Tests/Test Executions.
+- Xray es opcional: si no tenés acceso por API, Qat puede generar archivos importables.
 
 ```bash
 git clone https://github.com/mnavarrosqa/Qat.git
@@ -18,24 +18,70 @@ npm install
 cp .env.example .env
 ```
 
-## 2. Configurar
+## 2. Ejecutar el setup
 
-Abrí `.env` y completá Jira:
+La forma recomendada de configurar Qat por primera vez es:
+
+```bash
+npm run setup
+```
+
+Durante el setup, Qat pregunta si usás Xray.
+
+Si respondés que no, deja Xray deshabilitado.
+
+Si respondés que sí, pregunta si tenés credenciales/API disponibles para Xray.
+
+### Con API
+
+Qat guarda:
+
+```env
+XRAY_ENABLED=true
+XRAY_MODE=api
+```
+
+Los secretos reales deben quedar únicamente en `.env` o variables de entorno. Nunca se guardan en el repositorio.
+
+Para Xray Cloud también existen estas variables opcionales:
+
+```env
+XRAY_CLIENT_ID=
+XRAY_CLIENT_SECRET=
+```
+
+La implementación actual de creación/actualización de Tests sigue usando las operaciones Jira/Xray disponibles en el proyecto; estas variables quedan preparadas para el adapter nativo de Xray Cloud.
+
+### Sin API
+
+Si no tenés acceso por API, Qat ofrece modo exportación:
+
+```env
+XRAY_ENABLED=true
+XRAY_MODE=export
+XRAY_EXPORT_FORMAT=csv
+```
+
+También podés elegir `json`.
+
+En este modo, cuando pedís crear tests en Xray, Qat no intenta escribir en Jira/Xray. Genera un archivo importable en `artifacts/`.
+
+Ejemplo:
+
+```text
+artifacts/QA-123-xray-import.csv
+```
+
+El CSV incluye Summary, Issue Type, Description, Labels, Test Type, Priority, Source Issue y Case ID. Estos campos pueden mapearse durante el import de Jira/Xray según la configuración de cada empresa.
+
+## 3. Configurar Jira y ambiente
+
+Completá Jira en `.env`:
 
 ```env
 JIRA_BASE_URL=https://tuempresa.atlassian.net
 JIRA_EMAIL=tu.email@empresa.com
 JIRA_API_TOKEN=tu_token
-```
-
-Configurá Xray si lo vas a usar:
-
-```env
-XRAY_ENABLED=true
-XRAY_TEST_ISSUE_TYPE=Test
-XRAY_EXECUTION_ISSUE_TYPE=Test Execution
-XRAY_LINK_TYPE=Tests
-XRAY_EXECUTION_LINK_TYPE=Tests
 ```
 
 Configurá el ambiente que estás probando:
@@ -49,7 +95,7 @@ QAT_PASSWORD=password_qa
 
 Usuario/password son opcionales. Nunca commitees `.env` ni copies secretos en casos de prueba.
 
-## 3. Verificar que todo esté listo
+## 4. Verificar que todo esté listo
 
 ```bash
 npm run doctor
@@ -61,9 +107,9 @@ También podés ejecutar los tests internos:
 npm test
 ```
 
-`doctor` informa si Claude, Jira, Xray y el ambiente están configurados, pero no muestra passwords ni tokens.
+`doctor` informa si Claude, Jira, Xray y el ambiente están configurados, pero no muestra passwords ni tokens. Para Xray muestra además si está en modo `api` o `export`.
 
-## 4. Usar lenguaje natural
+## 5. Usar lenguaje natural
 
 La forma recomendada de trabajar es escribir lo que querés hacer.
 
@@ -83,21 +129,40 @@ npm run qat -- "adjunta ./evidence/error-login.png a QA-123"
 
 La frase no tiene que ser idéntica a estos ejemplos. Qat intenta reconocer acciones frecuentes localmente y usa Claude como fallback cuando necesita interpretar una instrucción más libre.
 
-## 5. Flujo recomendado por ticket
+## 6. Qué pasa cuando pedís crear casos en Xray
+
+El mismo pedido funciona en ambos modos:
+
+```bash
+npm run qat -- "crea los tests de QA-123 en Xray"
+```
+
+Con `XRAY_MODE=api`, Qat crea o actualiza Tests.
+
+Con `XRAY_MODE=export`, Qat genera automáticamente un archivo importable y muestra su ubicación:
+
+```text
+✓ 12 casos exportados para Xray
+✓ Archivo importable: artifacts/QA-123-xray-import.csv
+```
+
+Esto permite usar Qat incluso cuando la empresa no habilita API para Xray.
+
+## 7. Flujo recomendado por ticket
 
 Para `QA-123`:
 
 1. `analiza QA-123 y genera casos de prueba`.
 2. Revisá los casos y las ambigüedades detectadas.
-3. `sube los tests de QA-123 a Xray sin modificar` para hacer dry-run.
-4. `crea los tests de QA-123 en Xray` cuando estés conforme.
+3. Pedí crear los tests en Xray.
+4. Si tenés API, Qat los sincroniza. Si no, genera el archivo importable.
 5. Ejecutá manualmente los casos.
 6. Registrá resultados y evidencia.
-7. Publicá el Test Execution.
+7. Publicá el Test Execution cuando corresponda.
 
-## 6. Registrar una ejecución
+## 8. Registrar una ejecución
 
-En v0.4 los Test Executions completos todavía usan un JSON para que PASS/FAIL y las evidencias no sean ambiguos.
+En v0.5 los Test Executions completos todavía usan un JSON para que PASS/FAIL y las evidencias no sean ambiguos.
 
 ```bash
 cp examples/execution.example.json execution.json
@@ -127,12 +192,7 @@ Ejemplo:
 }
 ```
 
-Estados permitidos:
-
-- `PASS`
-- `FAIL`
-- `BLOCKED`
-- `TODO`
+Estados permitidos: `PASS`, `FAIL`, `BLOCKED`, `TODO`.
 
 Validá primero:
 
@@ -146,9 +206,7 @@ Publicá después:
 npm run qat -- execute QA-123 execution.json
 ```
 
-Qat crea el Test Execution, vincula los Tests indicados, adjunta evidencia y comenta el ticket origen.
-
-## 7. Cambiar de ambiente
+## 9. Cambiar de ambiente
 
 Por ahora se mantiene simple: editá `.env`.
 
@@ -168,7 +226,7 @@ QAT_BASE_URL=https://staging.tuapp.com
 
 Después ejecutá `npm run doctor` para confirmar el ambiente activo.
 
-## 8. Seguridad
+## 10. Seguridad
 
 Qat sigue estas reglas:
 
@@ -176,10 +234,11 @@ Qat sigue estas reglas:
 - No imprime passwords ni tokens.
 - Las evidencias no se mandan a Claude.
 - Los passwords de prueba no se mandan a Claude.
-- Claude interpreta intención; no recibe acceso directo a Jira/Xray.
+- Claude interpreta intención; no recibe secretos.
+- Sin API de Xray se usa exportación local en vez de forzar credenciales.
 - Para cambios importantes conviene usar dry-run primero.
 
-## 9. Ahorro de tokens
+## 11. Ahorro de tokens
 
 Qat intenta evitar llamadas innecesarias al LLM:
 
@@ -189,12 +248,12 @@ Qat intenta evitar llamadas innecesarias al LLM:
 - no envía binarios ni secretos;
 - separa generación, sincronización y ejecución.
 
-## 10. Comandos clásicos
-
-Sirven para CI, debugging o cuando querés una operación totalmente explícita:
+## 12. Comandos clásicos
 
 ```bash
+npm run setup
 npm run doctor
+npm test
 npm run qat -- generate QA-123 --save
 npm run qat -- xray-sync QA-123 --dry-run --save
 npm run qat -- xray-sync QA-123
@@ -204,7 +263,7 @@ npm run qat -- comment QA-123 --status passed --summary "Smoke OK"
 npm run qat -- evidence QA-123 ./evidence/login.png
 ```
 
-## 11. Problemas comunes
+## 13. Problemas comunes
 
 ### Claude CLI no aparece
 
@@ -218,15 +277,25 @@ Si la empresa usa un wrapper, configurá `CLAUDE_COMMAND` en `.env`.
 
 Revisá `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` y los permisos del usuario.
 
+### No tengo API de Xray
+
+Ejecutá:
+
+```bash
+npm run setup
+```
+
+Elegí Xray y respondé que no tenés API. Qat configurará `XRAY_MODE=export`.
+
 ### Xray no crea el tipo correcto
 
 Los nombres dependen de la instalación. Revisá `XRAY_TEST_ISSUE_TYPE`, `XRAY_EXECUTION_ISSUE_TYPE` y los tipos de link.
 
-### No quiero modificar Jira todavía
+### El CSV necesita campos distintos
 
-Usá lenguaje natural indicando `sin modificar` cuando esté soportado o el comando explícito `--dry-run`.
+Cada instancia de Jira/Xray puede tener custom fields diferentes. El CSV de Qat usa un conjunto base y el importador permite mapear columnas. Más adelante agregaremos perfiles de importación configurables.
 
-## 12. Qué viene después
+## 14. Qué viene después
 
 La siguiente evolución apunta a poder escribir directamente algo como:
 
@@ -234,4 +303,4 @@ La siguiente evolución apunta a poder escribir directamente algo como:
 QA-123: TC-001 pasó, TC-002 falló por error 500 y adjunta error.png
 ```
 
-Qat debería convertirlo en un Test Execution sin necesidad de preparar `execution.json`. Después avanzaremos sobre Test Runs nativos de Xray, detección automática de configuración y Test Plans/suites.
+Qat debería convertirlo en un Test Execution sin necesidad de preparar `execution.json`. Después avanzaremos sobre Test Runs nativos de Xray, adapter nativo para Xray Cloud, detección automática de configuración, Test Plans/suites y perfiles de importación.
