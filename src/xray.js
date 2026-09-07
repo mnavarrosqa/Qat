@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import { createIssue, updateIssue, searchIssues, linkIssues, getIssue } from './jira.js';
 
 function safeLabel(value) {
@@ -45,6 +46,11 @@ function testLabels(sourceKey, caseId) {
   return ['qat', `qat-source-${safeLabel(sourceKey)}`, `qat-case-${safeLabel(caseId)}`];
 }
 
+function csvCell(value) {
+  const s = String(value ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+}
+
 export function parseStructuredCases(raw) {
   const trimmed = String(raw || '').trim();
   const unfenced = trimmed
@@ -54,6 +60,46 @@ export function parseStructuredCases(raw) {
   const cases = Array.isArray(parsed) ? parsed : parsed.testCases;
   if (!Array.isArray(cases)) throw new Error('Claude no devolvió un array testCases válido');
   return cases;
+}
+
+export async function exportTestCases(cfg, sourceKey, testCases, { format = cfg.xrayExportFormat || 'csv' } = {}) {
+  await fs.mkdir('artifacts', { recursive: true });
+  const normalizedFormat = String(format).toLowerCase() === 'json' ? 'json' : 'csv';
+  const file = `artifacts/${sourceKey}-xray-import.${normalizedFormat}`;
+
+  if (normalizedFormat === 'json') {
+    const payload = {
+      sourceIssue: sourceKey,
+      testCases: testCases.map((testCase) => ({
+        id: testCase.id,
+        summary: `[${testCase.id}] ${testCase.title}`,
+        issueType: cfg.xrayTestIssueType,
+        testType: testCase.type || cfg.xrayTestTypeValue || 'Manual',
+        priority: testCase.priority || '',
+        labels: testLabels(sourceKey, testCase.id),
+        preconditions: testCase.preconditions || [],
+        steps: testCase.steps || [],
+        expectedResult: testCase.expectedResult || testCase.expected || '',
+      })),
+    };
+    await fs.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+  } else {
+    const headers = ['Summary', 'Issue Type', 'Description', 'Labels', 'Test Type', 'Priority', 'Source Issue', 'Case ID'];
+    const rows = testCases.map((testCase) => [
+      `[${testCase.id}] ${testCase.title}`,
+      cfg.xrayTestIssueType,
+      descriptionFor(testCase, sourceKey),
+      testLabels(sourceKey, testCase.id).join(' '),
+      testCase.type || cfg.xrayTestTypeValue || 'Manual',
+      testCase.priority || '',
+      sourceKey,
+      testCase.id || '',
+    ]);
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+    await fs.writeFile(file, `${csv}\n`, 'utf8');
+  }
+
+  return { action: 'exported', format: normalizedFormat, file, count: testCases.length };
 }
 
 export async function syncTestCases(cfg, sourceKey, testCases, { dryRun = false } = {}) {
