@@ -15,6 +15,10 @@ export function config() {
     xrayExecutionLinkType: process.env.XRAY_EXECUTION_LINK_TYPE || process.env.XRAY_LINK_TYPE || 'Tests',
     xrayTestTypeField: process.env.XRAY_TEST_TYPE_FIELD || '',
     xrayTestTypeValue: process.env.XRAY_TEST_TYPE_VALUE || 'Manual',
+    qatEnv: process.env.QAT_ENV || 'qa',
+    qatBaseUrl: (process.env.QAT_BASE_URL || '').replace(/\/$/, ''),
+    qatUser: process.env.QAT_USER || '',
+    qatPassword: process.env.QAT_PASSWORD || '',
     tokenBudget: Number(process.env.TOKEN_BUDGET || 12000),
   };
 }
