@@ -1,38 +1,29 @@
 # Qat
 
-Qat es un harness simple para ayudar a QA manuales a convertir tickets en planes/casos de prueba, sincronizarlos con Xray y publicar ejecuciones, resultados y evidencias nuevamente en Jira.
+Qat es un harness simple para ayudar a QA manuales a convertir tickets en casos de prueba, sincronizarlos con Xray y publicar ejecuciones, resultados y evidencias nuevamente en Jira.
 
-Está pensado para funcionar **sin API de Claude**: usa `claude` por CLI cuando la empresa ya provee acceso de esa forma. La arquitectura queda abierta a otros proveedores.
+Funciona **sin API de Claude**: usa `claude` por CLI cuando la empresa ya provee acceso de esa forma.
 
 ## Estado actual
 
-Versión **0.3.0**.
+Versión **0.3.x**.
 
 Incluye:
 
 - lectura de tickets Jira Cloud;
 - generación de casos con Claude CLI;
-- salida Markdown para revisión humana;
-- salida JSON estructurada para Xray;
-- creación y actualización idempotente de issues tipo `Test`;
-- link automático entre ticket origen y Test;
-- creación de issues tipo `Test Execution`;
-- resultados `PASS`, `FAIL`, `BLOCKED` y `TODO` por caso;
-- evidencias adjuntas a la ejecución;
-- comentario final automático en el ticket origen;
-- caché local y presupuesto de contexto para reducir tokens;
-- modo `--dry-run` para inspeccionar cambios antes de tocar Jira.
-
-## Requisitos
-
-- Node.js 18+
-- Claude CLI instalado y autenticado (`claude --version`)
-- Jira Cloud accesible por REST
-- Xray instalado/configurado en Jira para usar `xray-sync` y `execute`
-
-> La versión actual usa Jira REST API v3. Jira Server/Data Center necesitará un adapter específico.
+- creación/actualización de Tests en Xray;
+- Test Executions;
+- estados `PASS`, `FAIL`, `BLOCKED` y `TODO`;
+- evidencias;
+- comentario final automático en Jira;
+- configuración simple de ambiente y usuario de prueba;
+- caché local para reducir tokens;
+- `--dry-run` antes de modificar Jira.
 
 ## Instalación
+
+Requisitos: Node.js 18+, Claude CLI instalado/autenticado y acceso a Jira Cloud.
 
 ```bash
 git clone https://github.com/mnavarrosqa/Qat.git
@@ -41,9 +32,13 @@ npm install
 cp .env.example .env
 ```
 
-Editá `.env` con tus credenciales/configuración.
+Después editá `.env`.
 
-## Configuración mínima
+## Configuración
+
+Toda la configuración local vive en un solo archivo: `.env`.
+
+Ejemplo mínimo:
 
 ```env
 LLM_PROVIDER=claude-cli
@@ -59,98 +54,111 @@ XRAY_EXECUTION_ISSUE_TYPE=Test Execution
 XRAY_LINK_TYPE=Tests
 XRAY_EXECUTION_LINK_TYPE=Tests
 
+QAT_ENV=qa
+QAT_BASE_URL=https://qa.tuapp.com
+QAT_USER=usuario_qa
+QAT_PASSWORD=password_qa
+
 TOKEN_BUDGET=12000
 ```
 
-No subas `.env` al repositorio.
+### Ambientes, usuarios y passwords
 
-### Proyecto de Tests y ejecuciones
+Para mantener Qat simple, usamos **un ambiente activo por `.env`**.
 
-Por defecto, Qat crea Tests y Test Executions en el mismo proyecto que el ticket origen.
+Por ejemplo, para QA:
 
-Para usar otro proyecto:
+```env
+QAT_ENV=qa
+QAT_BASE_URL=https://qa.tuapp.com
+QAT_USER=usuario_qa
+QAT_PASSWORD=password_qa
+```
+
+Para trabajar en staging, cambiás esas variables:
+
+```env
+QAT_ENV=staging
+QAT_BASE_URL=https://staging.tuapp.com
+QAT_USER=usuario_staging
+QAT_PASSWORD=password_staging
+```
+
+No hace falta crear archivos JSON de ambientes ni administrar perfiles todavía.
+
+`QAT_USER` y `QAT_PASSWORD` son opcionales. Sólo se completan cuando las pruebas necesitan autenticación.
+
+**Importante:** `.env` está ignorado por Git. Nunca pongas passwords reales en `.env.example`, casos de prueba, evidencias o archivos que vayas a commitear.
+
+Claude no necesita conocer el password. Cuando en el futuro Qat automatice el login, la credencial se leerá localmente desde `.env` y no se incluirá en el prompt enviado al LLM.
+
+Podés comprobar la configuración sin mostrar los secretos:
+
+```bash
+npm run doctor
+```
+
+Verás algo similar a:
+
+```text
+QA environment: qa
+QA base URL: https://qa.tuapp.com
+QA test credentials: configuradas
+```
+
+El password nunca se imprime.
+
+### Configuración opcional de Xray
+
+Por defecto Tests y Test Executions se crean en el proyecto del ticket origen. Para otro proyecto:
 
 ```env
 XRAY_PROJECT_KEY=QA
 ```
 
-### Campo Test Type de Xray
-
-Algunas instalaciones de Xray exponen `Test Type` como un custom field de Jira. Si necesitás completarlo:
+Si tu instalación necesita el custom field `Test Type`:
 
 ```env
 XRAY_TEST_TYPE_FIELD=customfield_12345
 XRAY_TEST_TYPE_VALUE=Manual
 ```
 
-Si no hace falta, dejá `XRAY_TEST_TYPE_FIELD` vacío.
+## Flujo diario
 
-### Tipos de link
-
-Por defecto:
-
-```env
-XRAY_LINK_TYPE=Tests
-XRAY_EXECUTION_LINK_TYPE=Tests
-```
-
-Si tu Jira/Xray usa otros nombres, reemplazalos por los nombres exactos configurados en Jira.
-
-## Uso rápido
-
-Verificar instalación:
+### 1. Verificar configuración
 
 ```bash
 npm run doctor
-```
-
-Ejecutar tests internos:
-
-```bash
 npm test
 ```
 
-### 1. Generar casos para revisión
+### 2. Generar casos
 
 ```bash
 npm run qat -- generate QA-123
 ```
 
-Guardar Markdown:
+Para guardarlos:
 
 ```bash
 npm run qat -- generate QA-123 --save
 ```
 
-### 2. Probar el sync con Xray
+### 3. Revisar antes de crear Tests
 
 ```bash
 npm run qat -- xray-sync QA-123 --dry-run --save
 ```
 
-El JSON estructurado queda en:
-
-```text
-artifacts/QA-123-xray.json
-```
-
-### 3. Crear o actualizar Tests
+### 4. Crear/actualizar Tests
 
 ```bash
 npm run qat -- xray-sync QA-123
 ```
 
-Para cada caso Qat usa labels estables similares a:
+Qat usa IDs y labels estables para actualizar Tests existentes en lugar de duplicarlos.
 
-```text
-qat
-qat-source-qa-123
-qat-case-tc-001
-```
-
-Esto permite actualizar Tests existentes en lugar de duplicarlos.
-
-### 4. Registrar una ejecución
+### 5. Registrar resultados
 
 Copiá el ejemplo:
 
@@ -158,16 +166,7 @@ Copiá el ejemplo:
 cp examples/execution.example.json execution.json
 ```
 
-Marcá cada caso con uno de estos estados:
-
-```text
-PASS
-FAIL
-BLOCKED
-TODO
-```
-
-Cuando el caso ya existe en Xray, agregá su `key` para vincularlo a la ejecución:
+Ejemplo de un resultado:
 
 ```json
 {
@@ -180,85 +179,77 @@ Cuando el caso ya existe en Xray, agregá su `key` para vincularlo a la ejecuci�
 }
 ```
 
-Primero probá:
+Estados disponibles:
+
+```text
+PASS
+FAIL
+BLOCKED
+TODO
+```
+
+Primero:
 
 ```bash
 npm run qat -- execute QA-123 execution.json --dry-run
 ```
 
-Después publicá:
+Si está correcto:
 
 ```bash
 npm run qat -- execute QA-123 execution.json
 ```
 
-Qat hará lo siguiente:
+Qat crea el Test Execution, vincula los Tests que tengan `key`, adjunta evidencias y comenta el ticket origen con el resumen.
 
-1. valida todos los estados;
-2. crea un issue `Test Execution`;
-3. lo vincula al ticket origen;
-4. vincula los Tests que tengan `key`;
-5. adjunta las evidencias al Test Execution;
-6. agrega a la ejecución el detalle de PASS/FAIL/BLOCKED/TODO;
-7. comenta el ticket origen con el resumen y la clave de la ejecución.
-
-### Comentario manual
+## Comandos
 
 ```bash
+npm run doctor
+npm run qat -- generate QA-123 [--save]
+npm run qat -- xray-sync QA-123 [--dry-run] [--save]
+npm run qat -- execute QA-123 execution.json [--dry-run]
 npm run qat -- comment QA-123 --status passed --summary "Smoke OK"
-```
-
-### Evidencia manual
-
-```bash
 npm run qat -- evidence QA-123 ./evidence/login.png
-```
-
-### Ayuda
-
-```bash
 npm run qat -- --help
 ```
 
-## Claude por CLI
+## Claude CLI
 
-Qat no necesita una API key de Anthropic cuando `LLM_PROVIDER=claude-cli`. Ejecuta el comando configurado en `CLAUDE_COMMAND` y envía el prompt por stdin.
+Qat no necesita una API key de Anthropic.
 
 ```bash
 claude --version
 printf "Respondé solamente OK" | claude
 ```
 
-Si tu instalación corporativa usa otro wrapper:
+Si la empresa usa otro wrapper:
 
 ```env
 CLAUDE_COMMAND=mi-claude-corporativo
 ```
 
-## Flujo recomendado
+## Tokens
 
-1. QA toma un ticket Jira.
-2. `qat generate ABC-123` genera una versión legible de los casos.
-3. QA revisa requisitos, cobertura y ambigüedades.
-4. `qat xray-sync ABC-123 --dry-run --save` prepara el sync.
-5. `qat xray-sync ABC-123` crea/actualiza Tests.
-6. QA ejecuta las pruebas y completa `execution.json`.
-7. `qat execute ABC-123 execution.json --dry-run` valida el reporte.
-8. `qat execute ABC-123 execution.json` crea el Test Execution, adjunta evidencias y comenta el ticket.
+Para mantener bajo el consumo:
 
-## Optimización de tokens
+- sólo se envían campos útiles del ticket;
+- el contexto se limita con `TOKEN_BUDGET`;
+- las respuestas se cachean localmente;
+- las evidencias no se envían a Claude;
+- usuarios/passwords no se envían al LLM;
+- generación, sync y reporte son operaciones separadas.
 
-La estrategia inicial es deliberadamente simple:
+Más adelante podemos evaluar EnGram, Ponytail u otra solución sólo si realmente reduce costo/latencia sin complicar el uso.
 
-- enviar sólo campos útiles del ticket;
-- truncar contexto según `TOKEN_BUDGET`;
-- cachear respuestas por ticket + prompt;
-- reutilizar resultados previos;
-- separar generación, sincronización y reporte;
-- evitar enviar evidencias binarias al LLM;
-- usar IDs estables para no regenerar trabajo innecesariamente.
+## Seguridad
 
-En versiones posteriores se puede evaluar EnGram, Ponytail u otra capa de memoria/compresión si reduce costo y latencia sin volver frágil el flujo.
+- `.env` está ignorado por Git;
+- passwords y tokens no se imprimen;
+- no guardar secretos en casos de prueba;
+- evidencias van directamente a Jira, no a Claude;
+- usar `--dry-run` antes de operaciones importantes;
+- evitar usar credenciales de producción para testing.
 
 ## Estructura
 
@@ -273,34 +264,24 @@ src/
   xray.js
   execution.js
 test/
-  execution.test.js
 examples/
-  execution.example.json
 artifacts/
 evidence/
+.env.example
 ```
 
-## Seguridad
+## Limitaciones actuales
 
-- `.env` está ignorado por Git.
-- Qat no imprime tokens en consola.
-- Las credenciales de Jira sólo se envían al host configurado.
-- Las evidencias se adjuntan directamente a Jira y no pasan por Claude.
-- `--dry-run` permite inspeccionar el resultado antes de modificar Jira/Xray.
-
-## Limitaciones v0.3
-
-- Xray cambia custom fields y nombres de issue/link según instalación, por eso son configurables.
-- Los pasos de los Tests siguen guardándose inicialmente en la descripción.
-- Los estados PASS/FAIL/BLOCKED/TODO quedan registrados en la descripción del Test Execution y el comentario resumen. Escribir directamente el estado nativo de cada Test Run de Xray requiere el adapter específico de la API/GraphQL correspondiente a la edición instalada.
-- La integración actual apunta a Jira Cloud.
+- Jira Cloud REST API v3; Server/Data Center necesitará un adapter.
+- Xray puede tener nombres/custom fields distintos según instalación.
+- Los pasos todavía se almacenan inicialmente en la descripción del Test.
+- PASS/FAIL/BLOCKED/TODO se registran en el Test Execution; actualizar Test Runs nativos de Xray será parte del adapter específico de Xray.
 
 ## Próximos pasos
 
-- detectar automáticamente metadata/campos de Xray;
-- escribir pasos directamente en el modelo nativo de Xray;
-- adapter nativo para actualizar Test Runs dentro de Test Executions;
+- Test Runs nativos de Xray;
+- detección de campos Xray;
 - Test Plans y suites;
-- importar suites existentes;
-- adapters para Jira Server/Data Center;
-- mejorar memoria/caché para reducir todavía más tokens.
+- automatización opcional de login usando `QAT_USER`/`QAT_PASSWORD` localmente;
+- adapters Jira Server/Data Center;
+- seguir reduciendo tokens sin complicar el flujo.
