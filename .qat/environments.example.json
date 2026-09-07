@@ -1,0 +1,32 @@
+{
+  "environments": {
+    "qa": {
+      "baseUrl": "https://qa.example.com",
+      "defaultProfile": "qa-user",
+      "profiles": {
+        "qa-user": {
+          "user": "qa.user@example.com",
+          "password": "change-me"
+        },
+        "admin": {
+          "user": "qa.admin@example.com",
+          "password": "change-me"
+        },
+        "customer": {
+          "user": "customer@example.com",
+          "password": "change-me"
+        }
+      }
+    },
+    "staging": {
+      "baseUrl": "https://staging.example.com",
+      "defaultProfile": "qa-user",
+      "profiles": {
+        "qa-user": {
+          "user": "staging.qa@example.com",
+          "password": "change-me"
+        }
+      }
+    }
+  }
+}
