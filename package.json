@@ -1,9 +1,9 @@
 {
   "name": "qat",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "QA harness for Jira/Xray with Claude CLI",
+  "description": "Natural-language QA harness for Jira/Xray with Claude CLI",
   "scripts": {
     "qat": "node src/cli.js",
     "doctor": "node src/cli.js doctor",
