@@ -1,6 +1,21 @@
 import 'dotenv/config';
+import { resolveEnvironment } from './environments.js';
 
 export function config() {
+  const environmentFile = process.env.QAT_ENVIRONMENTS_FILE || '.qat/environments.json';
+  const selected = resolveEnvironment({
+    filePath: environmentFile,
+    environment: process.env.QAT_ENV || 'qa',
+    profile: process.env.QAT_PROFILE || '',
+    fallback: {
+      name: process.env.QAT_ENV || 'qa',
+      profile: process.env.QAT_PROFILE || 'default',
+      baseUrl: process.env.QAT_BASE_URL || '',
+      user: process.env.QAT_USER || '',
+      password: process.env.QAT_PASSWORD || '',
+    },
+  });
+
   return {
     llmProvider: process.env.LLM_PROVIDER || 'claude-cli',
     claudeCommand: process.env.CLAUDE_COMMAND || 'claude',
@@ -19,10 +34,13 @@ export function config() {
     xrayExecutionLinkType: process.env.XRAY_EXECUTION_LINK_TYPE || process.env.XRAY_LINK_TYPE || 'Tests',
     xrayTestTypeField: process.env.XRAY_TEST_TYPE_FIELD || '',
     xrayTestTypeValue: process.env.XRAY_TEST_TYPE_VALUE || 'Manual',
-    qatEnv: process.env.QAT_ENV || 'qa',
-    qatBaseUrl: (process.env.QAT_BASE_URL || '').replace(/\/$/, ''),
-    qatUser: process.env.QAT_USER || '',
-    qatPassword: process.env.QAT_PASSWORD || '',
+    qatEnvironmentsFile: environmentFile,
+    qatEnv: selected.name,
+    qatProfile: selected.profile,
+    qatBaseUrl: selected.baseUrl,
+    qatUser: selected.user,
+    qatPassword: selected.password,
+    qatEnvironmentSource: selected.source,
     tokenBudget: Number(process.env.TOKEN_BUDGET || 12000),
   };
 }
