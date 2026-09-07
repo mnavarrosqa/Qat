@@ -7,6 +7,7 @@ import { runLLM } from './llm.js';
 import { testCasesPrompt, xrayCasesPrompt } from './prompts.js';
 import { cached } from './cache.js';
 import { parseStructuredCases, syncTestCases, exportTestCases } from './xray.js';
+import { checkXrayCloud } from './xray-cloud.js';
 import { loadExecution, publishExecution } from './execution.js';
 import { interpretNatural } from './natural.js';
 import { runSetup } from './setup.js';
@@ -20,7 +21,7 @@ const has = (flag) => args.includes(flag);
 const value = (flag, fallback = '') => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : fallback; };
 
 function help() {
-  console.log(`Qat v0.6\n\nPrimer uso:\n  qat setup\n\nUso recomendado (lenguaje natural):\n  qat "analiza QA-123 y genera casos de prueba"\n  qat "crea los tests de QA-123 en Xray"\n  qat "comenta QA-123 indicando que el smoke pasó"\n  qat "adjunta ./evidence/error.png a QA-123"\n\nAmbientes y perfiles:\n  qat env list\n  qat env show\n  qat env use qa admin\n\nComandos clásicos:\n  setup\n  doctor\n  env list|show|use <ambiente> [perfil]\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
+  console.log(`Qat v0.7\n\nPrimer uso:\n  qat setup\n\nUso recomendado (lenguaje natural):\n  qat "analiza QA-123 y genera casos de prueba"\n  qat "crea los tests de QA-123 en Xray"\n  qat "comenta QA-123 indicando que el smoke pasó"\n  qat "adjunta ./evidence/error.png a QA-123"\n\nAmbientes y perfiles:\n  qat env list\n  qat env show\n  qat env use qa admin\n\nComandos clásicos:\n  setup\n  doctor\n  env list|show|use <ambiente> [perfil]\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
 }
 
 async function setEnvValue(content, key, value) {
@@ -32,11 +33,7 @@ async function setEnvValue(content, key, value) {
 
 async function useEnvironment(name, profile = '') {
   if (!name) throw new Error('Uso: env use <ambiente> [perfil]');
-  const selected = resolveEnvironment({
-    filePath: cfg.qatEnvironmentsFile,
-    environment: name,
-    profile,
-  });
+  const selected = resolveEnvironment({ filePath: cfg.qatEnvironmentsFile, environment: name, profile });
   let content = '';
   try { content = await fs.readFile('.env', 'utf8'); } catch (error) {
     if (error.code !== 'ENOENT') throw error;
@@ -133,26 +130,32 @@ async function runNatural(input) {
   }
 }
 
+async function doctor() {
+  const check = spawnSync(cfg.claudeCommand.split(/\s+/)[0], ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
+  console.log(`Claude CLI: ${check.status === 0 ? 'OK - ' + (check.stdout || check.stderr).trim() : 'NO DISPONIBLE'}`);
+  console.log(`Jira URL: ${cfg.jiraBaseUrl ? 'configurada' : 'faltante'}`);
+  console.log(`Jira credentials: ${cfg.jiraEmail && cfg.jiraToken ? 'configuradas' : 'faltantes'}`);
+  console.log(`Xray: ${cfg.xrayEnabled ? `habilitado (${cfg.xrayMode})` : 'deshabilitado'}`);
+  if (cfg.xrayEnabled && cfg.xrayMode === 'export') {
+    console.log(`Xray export format: ${cfg.xrayExportFormat}`);
+  }
+  if (cfg.xrayEnabled && cfg.xrayMode === 'api') {
+    const status = await checkXrayCloud(cfg);
+    console.log(`Xray Cloud API: ${status.ok ? 'OK' : `NO DISPONIBLE - ${status.reason}`}`);
+    if (!status.ok) console.log(`Xray fallback recomendado: XRAY_MODE=export (${cfg.xrayExportFormat})`);
+  }
+  console.log(`QA environment: ${cfg.qatEnv}`);
+  console.log(`QA profile: ${cfg.qatProfile}`);
+  console.log(`QA base URL: ${cfg.qatBaseUrl || 'faltante'}`);
+  console.log(`QA test credentials: ${cfg.qatUser && cfg.qatPassword ? 'configuradas' : 'opcionales/no configuradas'}`);
+}
+
 async function main() {
   if (!command || command === '--help' || command === '-h') return help();
-
   if (!knownCommands.has(command)) return runNatural(argv.join(' '));
-
   if (command === 'setup') return runSetup();
   if (command === 'env') return environmentCommand();
-  if (command === 'doctor') {
-    const check = spawnSync(cfg.claudeCommand.split(/\s+/)[0], ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
-    console.log(`Claude CLI: ${check.status === 0 ? 'OK - ' + (check.stdout || check.stderr).trim() : 'NO DISPONIBLE'}`);
-    console.log(`Jira URL: ${cfg.jiraBaseUrl ? 'configurada' : 'faltante'}`);
-    console.log(`Jira credentials: ${cfg.jiraEmail && cfg.jiraToken ? 'configuradas' : 'faltantes'}`);
-    console.log(`Xray: ${cfg.xrayEnabled ? `habilitado (${cfg.xrayMode})` : 'deshabilitado'}`);
-    if (cfg.xrayEnabled && cfg.xrayMode === 'export') console.log(`Xray export format: ${cfg.xrayExportFormat}`);
-    console.log(`QA environment: ${cfg.qatEnv}`);
-    console.log(`QA profile: ${cfg.qatProfile}`);
-    console.log(`QA base URL: ${cfg.qatBaseUrl || 'faltante'}`);
-    console.log(`QA test credentials: ${cfg.qatUser && cfg.qatPassword ? 'configuradas' : 'opcionales/no configuradas'}`);
-    return;
-  }
+  if (command === 'doctor') return doctor();
   if (command === 'generate') {
     const key = args[0]; if (!key) throw new Error('Indicá el issue, por ejemplo QA-123');
     return generate(key, has('--save'));
