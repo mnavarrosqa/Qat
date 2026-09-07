@@ -28,6 +28,9 @@ async function main() {
     console.log(`Xray: ${cfg.xrayEnabled ? 'habilitado' : 'deshabilitado'}`);
     console.log(`Xray Test issue type: ${cfg.xrayTestIssueType}`);
     console.log(`Xray link type: ${cfg.xrayLinkType}`);
+    console.log(`QA environment: ${cfg.qatEnv}`);
+    console.log(`QA base URL: ${cfg.qatBaseUrl || 'faltante'}`);
+    console.log(`QA test credentials: ${cfg.qatUser && cfg.qatPassword ? 'configuradas' : 'opcionales/no configuradas'}`);
     return;
   }
   if (command === 'generate') {
