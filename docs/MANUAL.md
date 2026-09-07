@@ -1,6 +1,6 @@
 # Manual de Qat
 
-Este manual explica el flujo diario de Qat para QA manual.
+Este manual explica el flujo diario de Qat para QA manual. La idea es que la configuración inicial tenga algunos pasos explícitos, pero que el trabajo cotidiano sea simple y, progresivamente, pueda hacerse en lenguaje natural.
 
 ## 1. Instalar
 
@@ -58,9 +58,14 @@ JIRA_API_TOKEN=tu_token
 Desde v0.6 Qat separa **ambiente** y **perfil**.
 
 - Ambiente: dónde probás (`qa`, `staging`, `dev`).
-- Perfil: con qué usuario probás (`admin`, `customer`, `readonly`).
+- Perfil: con qué identidad probás (`admin`, `customer`, `readonly`).
 
-Esto permite usar un mismo ambiente con varios usuarios/passwords o varios ambientes con perfiles distintos.
+La relación es `ambiente/perfil`. Por ejemplo: `qa/admin`, `qa/customer` o `staging/admin`.
+
+Esto resuelve dos escenarios comunes sin duplicar configuración:
+
+1. varios ambientes con diferentes URLs;
+2. un mismo ambiente con varios usuarios/passwords.
 
 Creá la configuración local:
 
@@ -78,28 +83,16 @@ Ejemplo:
       "baseUrl": "https://qa.tuapp.com",
       "defaultProfile": "qa-user",
       "profiles": {
-        "qa-user": {
-          "user": "qa.user@empresa.com",
-          "password": "secret"
-        },
-        "admin": {
-          "user": "qa.admin@empresa.com",
-          "password": "secret"
-        },
-        "customer": {
-          "user": "customer@empresa.com",
-          "password": "secret"
-        }
+        "qa-user": { "user": "qa.user@empresa.com", "password": "secret" },
+        "admin": { "user": "qa.admin@empresa.com", "password": "secret" },
+        "customer": { "user": "customer@empresa.com", "password": "secret" }
       }
     },
     "staging": {
       "baseUrl": "https://staging.tuapp.com",
       "defaultProfile": "qa-user",
       "profiles": {
-        "qa-user": {
-          "user": "staging.qa@empresa.com",
-          "password": "secret"
-        }
+        "qa-user": { "user": "staging.qa@empresa.com", "password": "secret" }
       }
     }
   }
@@ -114,7 +107,7 @@ QAT_ENV=qa
 QAT_PROFILE=admin
 ```
 
-`.qat/environments.json` y `.env` están ignorados por Git.
+`.qat/environments.json` y `.env` están ignorados por Git. No copies secretos en tickets, casos, evidencias ni prompts.
 
 Guía detallada: [`ENVIRONMENTS.md`](ENVIRONMENTS.md).
 
@@ -132,27 +125,21 @@ Ver la selección activa:
 npm run qat -- env show
 ```
 
-Usar QA como admin:
+Cambiar de combinación:
 
 ```bash
 npm run qat -- env use qa admin
-```
-
-Usar QA como customer:
-
-```bash
 npm run qat -- env use qa customer
-```
-
-Usar staging:
-
-```bash
 npm run qat -- env use staging qa-user
 ```
 
-Qat no imprime passwords.
+`env use` guarda `QAT_ENV` y `QAT_PROFILE` como selección activa. Qat no imprime passwords.
 
-### Modo simple
+### Perfil por defecto
+
+Cada ambiente puede definir `defaultProfile`. Esto permite que el ambiente tenga una identidad habitual y sólo tengas que elegir otro perfil cuando el test lo requiera.
+
+### Modo simple / compatibilidad
 
 Si no querés usar perfiles todavía, el formato anterior sigue funcionando:
 
@@ -163,6 +150,8 @@ QAT_USER=usuario_qa
 QAT_PASSWORD=password_qa
 ```
 
+No es obligatorio migrar inmediatamente.
+
 ## 6. Verificar configuración
 
 ```bash
@@ -171,15 +160,17 @@ npm run doctor
 
 `doctor` informa:
 
-- Claude CLI disponible o no.
-- Jira configurado o no.
-- modo de Xray.
-- ambiente activo.
-- perfil activo.
-- URL activa.
+- Claude CLI disponible o no;
+- Jira configurado o no;
+- modo de Xray;
+- ambiente activo;
+- perfil activo;
+- URL activa;
 - si existen credenciales de prueba.
 
 Nunca muestra passwords ni tokens.
+
+Antes de una ejecución importante conviene usar `env show` o `doctor` para confirmar que el contexto activo es el correcto.
 
 ## 7. Usar lenguaje natural
 
@@ -192,6 +183,8 @@ npm run qat -- "adjunta ./evidence/error-login.png a QA-123"
 ```
 
 Qat intenta interpretar localmente pedidos frecuentes para ahorrar tokens y usa Claude como fallback.
+
+La selección de ambiente/perfil todavía se hace mediante `env use`. El objetivo inmediato es soportar también frases como `usa QA como admin` sin perder la validación explícita de qué contexto quedó activo.
 
 ## 8. Crear casos en Xray
 
@@ -209,15 +202,18 @@ artifacts/QA-123-xray-import.csv
 
 ## 9. Flujo recomendado por ticket
 
-1. Elegí ambiente y perfil.
-2. Analizá el ticket.
-3. Generá casos.
-4. Revisá cobertura y ambigüedades.
-5. Sincronizá/exportá a Xray.
-6. Ejecutá manualmente.
-7. Registrá PASS/FAIL/BLOCKED/TODO.
-8. Adjuntá evidencia.
-9. Publicá el Test Execution cuando corresponda.
+1. Ejecutá `env show` y confirmá ambiente/perfil.
+2. Cambiá de contexto con `env use` si hace falta.
+3. Analizá el ticket.
+4. Generá casos.
+5. Revisá cobertura y ambigüedades.
+6. Sincronizá/exportá a Xray.
+7. Ejecutá las pruebas.
+8. Registrá PASS/FAIL/BLOCKED/TODO.
+9. Adjuntá evidencia.
+10. Publicá el Test Execution cuando corresponda.
+
+Si un mismo caso debe validarse con varios roles, cambiá únicamente el perfil manteniendo el mismo ambiente. Si debe repetirse en otra instalación, cambiá ambiente y elegí el perfil correspondiente.
 
 ## 10. Registrar una ejecución
 
@@ -239,6 +235,7 @@ Estados permitidos: `PASS`, `FAIL`, `BLOCKED`, `TODO`.
 - passwords de prueba no se mandan a Claude.
 - evidencias no se mandan al LLM.
 - Claude interpreta intención; Qat ejecuta las acciones.
+- `env show` permite comprobar el contexto sin revelar secretos.
 - `--dry-run` permite revisar cambios antes de escribir.
 
 ## 12. Ahorro de tokens
@@ -249,6 +246,7 @@ Qat intenta reducir llamadas innecesarias al LLM:
 - caché de generación;
 - contexto del ticket limitado;
 - secretos fuera del LLM;
+- selección de ambientes/perfiles resuelta localmente;
 - generación, sync/export y ejecución separados.
 
 ## 13. Comandos clásicos
@@ -266,7 +264,7 @@ npm run qat -- xray-sync QA-123
 npm run qat -- execute QA-123 execution.json --dry-run
 npm run qat -- execute QA-123 execution.json
 npm run qat -- comment QA-123 --status passed --summary "Smoke OK"
-pm run qat -- evidence QA-123 ./evidence/login.png
+npm run qat -- evidence QA-123 ./evidence/login.png
 ```
 
 ## 14. Problemas comunes
@@ -289,11 +287,15 @@ Ejecutá `npm run setup`, indicá que usás Xray y que no tenés API. Qat usará
 
 ### No encuentra el ambiente
 
-Revisá `QAT_ENV` y los nombres dentro de `.qat/environments.json`.
+Revisá `QAT_ENV` y los nombres dentro de `.qat/environments.json`. Después ejecutá:
+
+```bash
+npm run qat -- env list
+```
 
 ### No encuentra el perfil
 
-Revisá `QAT_PROFILE` o ejecutá:
+Revisá `QAT_PROFILE`, `defaultProfile` y los perfiles del ambiente. Para ver las opciones:
 
 ```bash
 npm run qat -- env list
@@ -301,11 +303,16 @@ npm run qat -- env list
 
 ### Quiero un solo ambiente con varios usuarios
 
-Definí sólo `qa` y agregá todos los perfiles necesarios dentro de `qa.profiles`.
+Definí sólo `qa` y agregá todos los perfiles necesarios dentro de `qa.profiles`. No dupliques `baseUrl` para cada usuario.
+
+### QA y staging usan nombres de usuario distintos
+
+Definí el mismo nombre lógico de perfil en ambos ambientes, por ejemplo `admin`, pero asignale a cada uno sus propias credenciales. Así el rol sigue siendo reconocible aunque las cuentas reales sean diferentes.
 
 ## 15. Próximos pasos
 
 - cambiar ambiente/perfil también por lenguaje natural;
+- ejecutar un mismo flujo con varios perfiles/roles;
 - resultados y evidencias completamente por lenguaje natural;
 - adapter nativo para Xray Cloud;
 - Test Runs nativos de Xray;
