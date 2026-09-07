@@ -1,12 +1,12 @@
 # Qat
 
-Qat es un harness para QA manual pensado para usarse principalmente con **lenguaje natural**. Lee tickets Jira, genera casos, los sincroniza con Xray y publica resultados/evidencias.
+Qat es un harness para QA manual pensado para usarse principalmente con **lenguaje natural**. Lee tickets Jira, genera casos, los sincroniza con Xray o genera archivos importables, y publica resultados/evidencias.
 
 Funciona **sin API de Claude**: usa Claude CLI cuando la empresa ya provee acceso de esa forma.
 
 ## Estado actual
 
-Versión **0.4.0**.
+Versión **0.5.0**.
 
 > Para instalación y uso paso a paso consultá [`docs/MANUAL.md`](docs/MANUAL.md).
 
@@ -19,9 +19,12 @@ git clone https://github.com/mnavarrosqa/Qat.git
 cd Qat
 npm install
 cp .env.example .env
+npm run setup
 ```
 
-Editá `.env` con Jira/Xray y, si hace falta, ambiente/usuario de prueba.
+El setup pregunta si usás Xray y si tenés acceso por API. Si no tenés API, Qat configura automáticamente modo `export` y genera CSV/JSON importable en `artifacts/`.
+
+Después completá Jira y el ambiente en `.env`:
 
 ```env
 LLM_PROVIDER=claude-cli
@@ -30,74 +33,75 @@ JIRA_BASE_URL=https://tuempresa.atlassian.net
 JIRA_EMAIL=tu.email@empresa.com
 JIRA_API_TOKEN=tu_token
 
-XRAY_ENABLED=true
-XRAY_TEST_ISSUE_TYPE=Test
-XRAY_EXECUTION_ISSUE_TYPE=Test Execution
-XRAY_LINK_TYPE=Tests
-XRAY_EXECUTION_LINK_TYPE=Tests
-
 QAT_ENV=qa
 QAT_BASE_URL=https://qa.tuapp.com
 QAT_USER=usuario_qa
 QAT_PASSWORD=password_qa
 ```
 
-`.env` está ignorado por Git. Nunca guardes passwords/tokens reales en el repositorio. Las credenciales de prueba no se incluyen en prompts enviados a Claude.
+`.env` está ignorado por Git. Nunca guardes passwords/tokens reales en el repositorio.
 
-## Hablale a Qat
+## Xray con o sin API
 
-La interfaz recomendada es lenguaje natural:
+Con acceso por API:
 
-```bash
-npm run qat -- "analiza QA-123 y genera casos de prueba"
+```env
+XRAY_ENABLED=true
+XRAY_MODE=api
 ```
 
-```bash
-npm run qat -- "genera los casos de QA-123 y guárdalos"
+Sin acceso por API:
+
+```env
+XRAY_ENABLED=true
+XRAY_MODE=export
+XRAY_EXPORT_FORMAT=csv
 ```
 
-```bash
-npm run qat -- "sube los tests de QA-123 a Xray sin modificar"
-```
+El mismo pedido funciona en ambos casos:
 
 ```bash
 npm run qat -- "crea los tests de QA-123 en Xray"
 ```
 
-```bash
-npm run qat -- "comenta QA-123 indicando que el smoke pasó correctamente"
+En modo API, Qat crea/actualiza los Tests. En modo export, genera por ejemplo:
+
+```text
+artifacts/QA-123-xray-import.csv
 ```
 
+El CSV incluye campos base para mapear durante el import en Jira/Xray: Summary, Issue Type, Description, Labels, Test Type, Priority, Source Issue y Case ID.
+
+## Hablale a Qat
+
 ```bash
+npm run qat -- "analiza QA-123 y genera casos de prueba"
+npm run qat -- "genera los casos de QA-123 y guárdalos"
+npm run qat -- "crea los tests de QA-123 en Xray"
+npm run qat -- "comenta QA-123 indicando que el smoke pasó correctamente"
 npm run qat -- "adjunta ./evidence/error-login.png a QA-123"
 ```
 
 No necesitás escribir exactamente esas frases. Qat intenta reconocer pedidos comunes localmente para ahorrar tokens y usa Claude como fallback para interpretar instrucciones más libres.
 
-Claude interpreta **qué querés hacer**; el código de Qat ejecuta las operaciones reales contra Jira/Xray.
+Claude interpreta **qué querés hacer**; el código de Qat ejecuta las operaciones reales contra Jira/Xray o genera los artifacts correspondientes.
 
 ## Flujo diario
 
 1. Pedí que analice el ticket y genere casos.
 2. Revisá casos, cobertura y ambigüedades.
-3. Hacé dry-run del sync a Xray.
-4. Creá/actualizá los Tests.
+3. Pedí crear los tests en Xray.
+4. Con API se sincronizan; sin API se genera el archivo importable.
 5. Ejecutá las pruebas manuales.
 6. Registrá PASS/FAIL/BLOCKED/TODO y evidencia.
-7. Publicá el Test Execution.
+7. Publicá el Test Execution cuando corresponda.
 
-En v0.4, el paso 6/7 todavía usa `execution.json` para evitar interpretar incorrectamente resultados sensibles:
+En v0.5, el paso de Test Execution todavía usa `execution.json` para evitar interpretar incorrectamente resultados sensibles:
 
 ```bash
 cp examples/execution.example.json execution.json
 npm run qat -- execute QA-123 execution.json --dry-run
 npm run qat -- execute QA-123 execution.json
-```
-
-La próxima evolución elimina esta necesidad y permitirá frases como:
-
-```text
-QA-123: TC-001 pasó, TC-002 falló por error 500 y adjunta error.png
 ```
 
 ## Ambientes y credenciales
@@ -117,13 +121,12 @@ Para staging cambiás esos valores. Usuario/password son opcionales.
 npm run doctor
 ```
 
-`doctor` muestra el ambiente y si las credenciales están configuradas, pero nunca muestra passwords/tokens.
+`doctor` muestra el ambiente y si las credenciales están configuradas, pero nunca muestra passwords/tokens. También informa el modo activo de Xray.
 
 ## Comandos clásicos
 
-El lenguaje natural es una capa sobre operaciones determinísticas. Los comandos explícitos siguen disponibles para CI/debugging:
-
 ```bash
+npm run setup
 npm run doctor
 npm test
 npm run qat -- generate QA-123 [--save]
@@ -154,7 +157,7 @@ CLAUDE_COMMAND=mi-claude-corporativo
 - contexto del ticket limitado por `TOKEN_BUDGET`;
 - caché de generación;
 - evidencias y passwords fuera del LLM;
-- generación, sync y ejecución separados.
+- generación, sync/export y ejecución separados.
 
 ## Seguridad
 
@@ -162,7 +165,8 @@ CLAUDE_COMMAND=mi-claude-corporativo
 - passwords/tokens no se imprimen;
 - secretos no se envían a Claude;
 - evidencias no se envían al LLM;
-- Claude no tiene acceso directo a Jira/Xray;
+- Claude no tiene acceso directo a credenciales;
+- fallback local cuando no hay API de Xray;
 - `--dry-run` para inspeccionar cambios antes de escribir.
 
 ## Estructura
@@ -170,6 +174,7 @@ CLAUDE_COMMAND=mi-claude-corporativo
 ```text
 src/
   cli.js
+  setup.js
   natural.js
   config.js
   jira.js
@@ -186,25 +191,26 @@ artifacts/
 evidence/
 ```
 
-## Limitaciones v0.4
+## Limitaciones v0.5
 
 - Test Execution completo todavía usa JSON;
 - Jira Cloud REST API v3; Server/Data Center necesitará adapter;
 - Xray puede tener custom fields/nombres distintos según instalación;
-- Test Runs nativos de Xray siguen pendientes;
-- el parser natural seguirá ampliándose a medida que agreguemos operaciones.
+- el CSV exportable usa campos base y puede requerir mapeo durante el import;
+- el adapter nativo de Xray Cloud todavía está pendiente;
+- Test Runs nativos de Xray siguen pendientes.
 
 ## Roadmap inmediato
 
 1. resultados y evidencias completamente por lenguaje natural;
-2. modo conversacional interactivo `qat`;
-3. Test Runs nativos de Xray;
-4. detección automática de campos/configuración Xray;
+2. adapter nativo para Xray Cloud;
+3. perfiles configurables de importación CSV/JSON;
+4. Test Runs nativos de Xray;
 5. Test Plans y suites;
 6. optimización continua del consumo de tokens.
 
 ## Documentación
 
-- [`docs/MANUAL.md`](docs/MANUAL.md): instalación, configuración, flujo diario, seguridad y troubleshooting.
+- [`docs/MANUAL.md`](docs/MANUAL.md): instalación, setup, configuración, flujo diario, seguridad y troubleshooting.
 - [`.env.example`](.env.example): configuración de referencia.
 - [`examples/execution.example.json`](examples/execution.example.json): ejemplo de Test Execution.
