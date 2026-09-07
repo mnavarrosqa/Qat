@@ -7,6 +7,7 @@ import { runLLM } from './llm.js';
 import { testCasesPrompt, xrayCasesPrompt } from './prompts.js';
 import { cached } from './cache.js';
 import { parseStructuredCases, syncTestCases } from './xray.js';
+import { loadExecution, publishExecution } from './execution.js';
 
 const cfg = config();
 const [command, ...args] = process.argv.slice(2);
@@ -14,7 +15,7 @@ const has = (flag) => args.includes(flag);
 const value = (flag, fallback = '') => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : fallback; };
 
 function help() {
-  console.log(`Qat v0.2\n\nComandos:\n  doctor\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
+  console.log(`Qat v0.3\n\nComandos:\n  doctor\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
 }
 
 async function main() {
@@ -59,6 +60,14 @@ async function main() {
 
     const results = await syncTestCases(cfg, key, testCases, { dryRun: has('--dry-run') });
     console.log(JSON.stringify(results, null, 2));
+    return;
+  }
+  if (command === 'execute') {
+    const [key, file] = args;
+    if (!key || !file) throw new Error('Uso: execute ISSUE archivo.json [--dry-run]');
+    const execution = await loadExecution(file);
+    const result = await publishExecution(cfg, key, execution, { dryRun: has('--dry-run') });
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === 'comment') {
