@@ -6,19 +6,20 @@ import { getIssue, addComment, attachEvidence } from './jira.js';
 import { runLLM } from './llm.js';
 import { testCasesPrompt, xrayCasesPrompt } from './prompts.js';
 import { cached } from './cache.js';
-import { parseStructuredCases, syncTestCases } from './xray.js';
+import { parseStructuredCases, syncTestCases, exportTestCases } from './xray.js';
 import { loadExecution, publishExecution } from './execution.js';
 import { interpretNatural } from './natural.js';
+import { runSetup } from './setup.js';
 
 const cfg = config();
 const argv = process.argv.slice(2);
 const [command, ...args] = argv;
-const knownCommands = new Set(['doctor', 'generate', 'xray-sync', 'execute', 'comment', 'evidence']);
+const knownCommands = new Set(['setup', 'doctor', 'generate', 'xray-sync', 'execute', 'comment', 'evidence']);
 const has = (flag) => args.includes(flag);
 const value = (flag, fallback = '') => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : fallback; };
 
 function help() {
-  console.log(`Qat v0.4\n\nUso recomendado (lenguaje natural):\n  qat "analiza QA-123 y genera casos de prueba"\n  qat "crea los tests de QA-123 en Xray"\n  qat "comenta QA-123 indicando que el smoke pasó"\n  qat "adjunta ./evidence/error.png a QA-123"\n\nComandos clásicos:\n  doctor\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
+  console.log(`Qat v0.5\n\nPrimer uso:\n  qat setup\n\nUso recomendado (lenguaje natural):\n  qat "analiza QA-123 y genera casos de prueba"\n  qat "crea los tests de QA-123 en Xray"\n  qat "comenta QA-123 indicando que el smoke pasó"\n  qat "adjunta ./evidence/error.png a QA-123"\n\nComandos clásicos:\n  setup\n  doctor\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
 }
 
 async function generate(key, save = false) {
@@ -45,8 +46,17 @@ async function xraySync(key, { dryRun = false, save = false } = {}) {
     await fs.writeFile(file, JSON.stringify({ testCases }, null, 2), 'utf8');
     console.log(`Casos estructurados guardados en ${file}`);
   }
+
+  if (cfg.xrayMode === 'export') {
+    const result = await exportTestCases(cfg, key, testCases);
+    console.log(`✓ ${result.count} casos exportados para Xray`);
+    console.log(`✓ Archivo importable: ${result.file}`);
+    return result;
+  }
+
   const results = await syncTestCases(cfg, key, testCases, { dryRun });
   console.log(JSON.stringify(results, null, 2));
+  return results;
 }
 
 async function runNatural(input) {
@@ -76,12 +86,14 @@ async function main() {
   // Anything that is not a classic command is treated as a natural-language request.
   if (!knownCommands.has(command)) return runNatural(argv.join(' '));
 
+  if (command === 'setup') return runSetup();
   if (command === 'doctor') {
     const check = spawnSync(cfg.claudeCommand.split(/\s+/)[0], ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
     console.log(`Claude CLI: ${check.status === 0 ? 'OK - ' + (check.stdout || check.stderr).trim() : 'NO DISPONIBLE'}`);
     console.log(`Jira URL: ${cfg.jiraBaseUrl ? 'configurada' : 'faltante'}`);
     console.log(`Jira credentials: ${cfg.jiraEmail && cfg.jiraToken ? 'configuradas' : 'faltantes'}`);
-    console.log(`Xray: ${cfg.xrayEnabled ? 'habilitado' : 'deshabilitado'}`);
+    console.log(`Xray: ${cfg.xrayEnabled ? `habilitado (${cfg.xrayMode})` : 'deshabilitado'}`);
+    if (cfg.xrayEnabled && cfg.xrayMode === 'export') console.log(`Xray export format: ${cfg.xrayExportFormat}`);
     console.log(`QA environment: ${cfg.qatEnv}`);
     console.log(`QA base URL: ${cfg.qatBaseUrl || 'faltante'}`);
     console.log(`QA test credentials: ${cfg.qatUser && cfg.qatPassword ? 'configuradas' : 'opcionales/no configuradas'}`);
