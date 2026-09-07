@@ -1,5 +1,6 @@
 node_modules/
 .env
+.qat/environments.json
 artifacts/*
 !artifacts/.gitkeep
 evidence/*
