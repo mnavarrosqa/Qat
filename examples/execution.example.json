@@ -1,0 +1,25 @@
+{
+  "tests": [
+    {
+      "id": "TC-001",
+      "title": "Login con credenciales válidas",
+      "status": "PASS",
+      "note": "Login y redirección correctos"
+    },
+    {
+      "id": "TC-002",
+      "title": "Login con password inválido",
+      "status": "FAIL",
+      "note": "No se muestra el mensaje esperado",
+      "evidence": [
+        "./evidence/TC-002-login-error.png"
+      ]
+    },
+    {
+      "id": "TC-003",
+      "title": "Usuario bloqueado",
+      "status": "BLOCKED",
+      "note": "No hay usuario bloqueado disponible en QA"
+    }
+  ]
+}
