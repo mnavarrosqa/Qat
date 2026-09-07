@@ -35,11 +35,14 @@ export async function runSetup({ envPath = '.env' } = {}) {
     }
 
     content = setEnv(content, 'XRAY_ENABLED', 'true');
-    const hasApi = yes(await rl.question('¿Tenés credenciales/API disponibles para Xray? [s/N] '));
+    const hasApi = yes(await rl.question('¿Tenés credenciales/API disponibles para Xray Cloud? [s/N] '));
 
     if (hasApi) {
       content = setEnv(content, 'XRAY_MODE', 'api');
-      console.log('\nQat usará el modo API. Los secretos se leen desde variables de entorno/.env y nunca se guardan en la configuración pública.');
+      console.log('\n✓ Xray configurado en modo API nativa.');
+      console.log('  Agregá XRAY_CLIENT_ID y XRAY_CLIENT_SECRET a .env o a las variables de entorno.');
+      console.log('  Qat no pide ni imprime esos secretos durante el setup.');
+      console.log('  Ejecutá `npm run doctor` para validar la autenticación.');
     } else {
       content = setEnv(content, 'XRAY_MODE', 'export');
       const formatAnswer = (await rl.question('Formato de exportación [csv/json] (csv): ')).trim().toLowerCase();
