@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { createIssue, updateIssue, searchIssues, linkIssues, getIssue } from './jira.js';
+import { createXrayCloudTest, findXrayCloudTest } from './xray-cloud.js';
 
 function safeLabel(value) {
   return String(value || '')
@@ -102,11 +103,49 @@ export async function exportTestCases(cfg, sourceKey, testCases, { format = cfg.
   return { action: 'exported', format: normalizedFormat, file, count: testCases.length };
 }
 
+async function syncNativeCloudTest(cfg, sourceKey, projectKey, testCase, { dryRun = false } = {}) {
+  const labels = testLabels(sourceKey, testCase.id);
+  const summary = `[${testCase.id}] ${testCase.title}`;
+  const jql = `project = "${projectKey}" AND labels = "${labels[1]}" AND labels = "${labels[2]}"`;
+
+  if (dryRun) {
+    return {
+      id: testCase.id,
+      action: 'dry-run',
+      provider: 'xray-cloud',
+      projectKey,
+      summary,
+      labels,
+      testType: testCase.type || cfg.xrayTestTypeValue || 'Manual',
+      steps: testCase.steps || [],
+    };
+  }
+
+  const found = await findXrayCloudTest(cfg, jql);
+  if (found) {
+    const key = found.jira?.key || null;
+    return { id: testCase.id, key, issueId: found.issueId, action: 'exists', provider: 'xray-cloud' };
+  }
+
+  const created = await createXrayCloudTest(cfg, { projectKey, summary, labels, testCase });
+  const key = created?.test?.jira?.key || null;
+  if (key) await linkIssues(cfg, sourceKey, key, cfg.xrayLinkType);
+  return {
+    id: testCase.id,
+    key,
+    issueId: created?.test?.issueId || null,
+    action: 'created',
+    provider: 'xray-cloud',
+    warnings: created?.warnings || [],
+  };
+}
+
 export async function syncTestCases(cfg, sourceKey, testCases, { dryRun = false } = {}) {
   if (!cfg.xrayEnabled) throw new Error('XRAY_ENABLED=false');
   const source = await getIssue(cfg, sourceKey);
-  const projectKey = source.fields?.project?.key || sourceKey.split('-')[0];
+  const projectKey = cfg.xrayProjectKey || source.fields?.project?.key || sourceKey.split('-')[0];
   const results = [];
+  const nativeCloud = cfg.xrayMode === 'api' && cfg.xrayClientId && cfg.xrayClientSecret;
 
   for (const testCase of testCases) {
     if (!testCase?.id || !testCase?.title) {
@@ -114,9 +153,14 @@ export async function syncTestCases(cfg, sourceKey, testCases, { dryRun = false 
       continue;
     }
 
+    if (nativeCloud) {
+      results.push(await syncNativeCloudTest(cfg, sourceKey, projectKey, testCase, { dryRun }));
+      continue;
+    }
+
     const labels = testLabels(sourceKey, testCase.id);
     const fields = {
-      project: { key: cfg.xrayProjectKey || projectKey },
+      project: { key: projectKey },
       issuetype: { name: cfg.xrayTestIssueType },
       summary: `[${testCase.id}] ${testCase.title}`.slice(0, 255),
       description: descriptionFor(testCase, sourceKey),
@@ -126,11 +170,11 @@ export async function syncTestCases(cfg, sourceKey, testCases, { dryRun = false 
     if (cfg.xrayTestTypeField) fields[cfg.xrayTestTypeField] = cfg.xrayTestTypeValue;
 
     if (dryRun) {
-      results.push({ id: testCase.id, action: 'dry-run', fields });
+      results.push({ id: testCase.id, action: 'dry-run', provider: 'jira-xray', fields });
       continue;
     }
 
-    const jql = `project = "${cfg.xrayProjectKey || projectKey}" AND issuetype = "${cfg.xrayTestIssueType}" AND labels = "${labels[1]}" AND labels = "${labels[2]}"`;
+    const jql = `project = "${projectKey}" AND issuetype = "${cfg.xrayTestIssueType}" AND labels = "${labels[1]}" AND labels = "${labels[2]}"`;
     const found = await searchIssues(cfg, jql, ['key', 'summary', 'labels']);
     let testKey;
     let action;
@@ -146,7 +190,7 @@ export async function syncTestCases(cfg, sourceKey, testCases, { dryRun = false 
     }
 
     await linkIssues(cfg, sourceKey, testKey, cfg.xrayLinkType);
-    results.push({ id: testCase.id, key: testKey, action });
+    results.push({ id: testCase.id, key: testKey, action, provider: 'jira-xray' });
   }
 
   return results;
