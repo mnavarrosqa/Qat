@@ -8,7 +8,9 @@ Funciona **sin API de Claude**: usa Claude CLI cuando la empresa ya provee acces
 
 Versión **0.4.0**.
 
-## Instalación
+> Para instalación y uso paso a paso consultá [`docs/MANUAL.md`](docs/MANUAL.md).
+
+## Instalación rápida
 
 Requisitos: Node.js 18+, Claude CLI instalado/autenticado y acceso a Jira Cloud.
 
@@ -40,11 +42,11 @@ QAT_USER=usuario_qa
 QAT_PASSWORD=password_qa
 ```
 
-`.env` está ignorado por Git. Nunca guardes passwords/tokens reales en el repositorio. Las credenciales de prueba no se incluyen en los prompts enviados a Claude.
+`.env` está ignorado por Git. Nunca guardes passwords/tokens reales en el repositorio. Las credenciales de prueba no se incluyen en prompts enviados a Claude.
 
-## Uso recomendado: hablale a Qat
+## Hablale a Qat
 
-No hace falta memorizar comandos internos.
+La interfaz recomendada es lenguaje natural:
 
 ```bash
 npm run qat -- "analiza QA-123 y genera casos de prueba"
@@ -55,27 +57,52 @@ npm run qat -- "genera los casos de QA-123 y guárdalos"
 ```
 
 ```bash
-npm run qat -- "crea los tests de QA-123 en Xray"
-```
-
-Para revisar sin modificar Jira:
-
-```bash
 npm run qat -- "sube los tests de QA-123 a Xray sin modificar"
 ```
 
-También podés pedir:
+```bash
+npm run qat -- "crea los tests de QA-123 en Xray"
+```
 
 ```bash
 npm run qat -- "comenta QA-123 indicando que el smoke pasó correctamente"
+```
+
+```bash
 npm run qat -- "adjunta ./evidence/error-login.png a QA-123"
 ```
 
-Qat primero intenta entender pedidos comunes localmente para no gastar tokens. Si el pedido es más libre, Claude interpreta la intención y devuelve una acción estructurada. Claude **no ejecuta Jira directamente**: el código de Qat valida la acción y usa sus funciones de Jira/Xray.
+No necesitás escribir exactamente esas frases. Qat intenta reconocer pedidos comunes localmente para ahorrar tokens y usa Claude como fallback para interpretar instrucciones más libres.
+
+Claude interpreta **qué querés hacer**; el código de Qat ejecuta las operaciones reales contra Jira/Xray.
+
+## Flujo diario
+
+1. Pedí que analice el ticket y genere casos.
+2. Revisá casos, cobertura y ambigüedades.
+3. Hacé dry-run del sync a Xray.
+4. Creá/actualizá los Tests.
+5. Ejecutá las pruebas manuales.
+6. Registrá PASS/FAIL/BLOCKED/TODO y evidencia.
+7. Publicá el Test Execution.
+
+En v0.4, el paso 6/7 todavía usa `execution.json` para evitar interpretar incorrectamente resultados sensibles:
+
+```bash
+cp examples/execution.example.json execution.json
+npm run qat -- execute QA-123 execution.json --dry-run
+npm run qat -- execute QA-123 execution.json
+```
+
+La próxima evolución elimina esta necesidad y permitirá frases como:
+
+```text
+QA-123: TC-001 pasó, TC-002 falló por error 500 y adjunta error.png
+```
 
 ## Ambientes y credenciales
 
-Mantenemos un ambiente activo por `.env`:
+Un ambiente activo por `.env`:
 
 ```env
 QAT_ENV=qa
@@ -84,39 +111,21 @@ QAT_USER=usuario_qa
 QAT_PASSWORD=password_qa
 ```
 
-Para staging cambiás esos cuatro valores. `QAT_USER` y `QAT_PASSWORD` son opcionales.
-
-Verificá la configuración sin mostrar secretos:
+Para staging cambiás esos valores. Usuario/password son opcionales.
 
 ```bash
 npm run doctor
 ```
 
-## Flujo simple
-
-1. Pedí: `"analiza QA-123 y genera casos de prueba"`.
-2. Revisá los casos.
-3. Pedí: `"sube los tests de QA-123 a Xray sin modificar"`.
-4. Si está bien: `"crea los tests de QA-123 en Xray"`.
-5. Ejecutá las pruebas.
-6. Registrá resultados/evidencias.
-
-Para Test Executions completos todavía se conserva el archivo `execution.json` porque evita interpretar ambiguamente estados y evidencias:
-
-```bash
-cp examples/execution.example.json execution.json
-npm run qat -- execute QA-123 execution.json --dry-run
-npm run qat -- execute QA-123 execution.json
-```
-
-Estados: `PASS`, `FAIL`, `BLOCKED`, `TODO`.
+`doctor` muestra el ambiente y si las credenciales están configuradas, pero nunca muestra passwords/tokens.
 
 ## Comandos clásicos
 
-El lenguaje natural es una capa sobre operaciones determinísticas. Los comandos clásicos siguen disponibles para scripts/CI y debugging:
+El lenguaje natural es una capa sobre operaciones determinísticas. Los comandos explícitos siguen disponibles para CI/debugging:
 
 ```bash
 npm run doctor
+npm test
 npm run qat -- generate QA-123 [--save]
 npm run qat -- xray-sync QA-123 [--dry-run] [--save]
 npm run qat -- execute QA-123 execution.json [--dry-run]
@@ -126,13 +135,13 @@ npm run qat -- evidence QA-123 ./evidence/login.png
 
 ## Claude CLI
 
-Qat no necesita una API key de Anthropic.
+Qat no necesita API key de Anthropic:
 
 ```bash
 claude --version
 ```
 
-Si la empresa usa otro wrapper:
+Si tu empresa usa otro wrapper:
 
 ```env
 CLAUDE_COMMAND=mi-claude-corporativo
@@ -140,20 +149,21 @@ CLAUDE_COMMAND=mi-claude-corporativo
 
 ## Tokens
 
-- pedidos naturales comunes se reconocen localmente cuando es posible;
-- Claude se usa como fallback para interpretar pedidos libres;
-- sólo se envían campos útiles del ticket;
-- `TOKEN_BUDGET` limita contexto;
-- respuestas de generación se cachean;
-- evidencias y passwords no se envían al LLM.
+- interpretación local cuando es posible;
+- Claude como fallback;
+- contexto del ticket limitado por `TOKEN_BUDGET`;
+- caché de generación;
+- evidencias y passwords fuera del LLM;
+- generación, sync y ejecución separados.
 
 ## Seguridad
 
 - `.env` ignorado por Git;
 - passwords/tokens no se imprimen;
-- Claude interpreta intención pero no tiene acceso directo a las funciones Jira/Xray;
-- las acciones reales pasan por código controlado de Qat;
-- `--dry-run` sigue disponible para operaciones sensibles.
+- secretos no se envían a Claude;
+- evidencias no se envían al LLM;
+- Claude no tiene acceso directo a Jira/Xray;
+- `--dry-run` para inspeccionar cambios antes de escribir.
 
 ## Estructura
 
@@ -170,22 +180,31 @@ src/
   execution.js
 test/
 examples/
+docs/
+  MANUAL.md
 artifacts/
 evidence/
 ```
 
-## Limitaciones actuales
+## Limitaciones v0.4
 
-- lenguaje natural cubre generación, Xray sync, comentarios y evidencias; Test Execution completo todavía usa JSON;
+- Test Execution completo todavía usa JSON;
 - Jira Cloud REST API v3; Server/Data Center necesitará adapter;
 - Xray puede tener custom fields/nombres distintos según instalación;
-- actualizar Test Runs nativos de Xray sigue pendiente.
+- Test Runs nativos de Xray siguen pendientes;
+- el parser natural seguirá ampliándose a medida que agreguemos operaciones.
 
-## Próximos pasos
+## Roadmap inmediato
 
-- llevar también Test Executions/resultados a lenguaje natural;
-- modo conversacional interactivo `qat`;
-- Test Runs nativos de Xray;
-- detección automática de campos Xray;
-- Test Plans/suites;
-- seguir reduciendo llamadas al LLM y consumo de tokens.
+1. resultados y evidencias completamente por lenguaje natural;
+2. modo conversacional interactivo `qat`;
+3. Test Runs nativos de Xray;
+4. detección automática de campos/configuración Xray;
+5. Test Plans y suites;
+6. optimización continua del consumo de tokens.
+
+## Documentación
+
+- [`docs/MANUAL.md`](docs/MANUAL.md): instalación, configuración, flujo diario, seguridad y troubleshooting.
+- [`.env.example`](.env.example): configuración de referencia.
+- [`examples/execution.example.json`](examples/execution.example.json): ejemplo de Test Execution.
