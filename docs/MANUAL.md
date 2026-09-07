@@ -24,13 +24,21 @@ cp .env.example .env
 npm run setup
 ```
 
-El setup pregunta si usás Xray y si tenés acceso por API.
+El setup pregunta si usás Xray y si tenés acceso a la API de Xray Cloud.
 
 Con API:
 
 ```env
 XRAY_ENABLED=true
 XRAY_MODE=api
+XRAY_CLIENT_ID=tu_client_id
+XRAY_CLIENT_SECRET=tu_client_secret
+```
+
+Qat no solicita ni imprime esos secretos durante el setup. Guardalos solamente en `.env` o variables de entorno y validalos con:
+
+```bash
+npm run doctor
 ```
 
 Sin API:
@@ -53,19 +61,16 @@ JIRA_EMAIL=tu.email@empresa.com
 JIRA_API_TOKEN=tu_token
 ```
 
+Jira sigue siendo necesario para leer el ticket origen, comentarios, evidencias y vínculos entre issues.
+
 ## 4. Configurar ambientes y usuarios
 
-Desde v0.6 Qat separa **ambiente** y **perfil**.
+Qat separa **ambiente** y **perfil**.
 
 - Ambiente: dónde probás (`qa`, `staging`, `dev`).
 - Perfil: con qué identidad probás (`admin`, `customer`, `readonly`).
 
-La relación es `ambiente/perfil`. Por ejemplo: `qa/admin`, `qa/customer` o `staging/admin`.
-
-Esto resuelve dos escenarios comunes sin duplicar configuración:
-
-1. varios ambientes con diferentes URLs;
-2. un mismo ambiente con varios usuarios/passwords.
+La relación es `ambiente/perfil`, por ejemplo `qa/admin`, `qa/customer` o `staging/admin`.
 
 Creá la configuración local:
 
@@ -113,33 +118,15 @@ Guía detallada: [`ENVIRONMENTS.md`](ENVIRONMENTS.md).
 
 ## 5. Cambiar de ambiente o usuario
 
-Listar configuraciones:
-
 ```bash
 npm run qat -- env list
-```
-
-Ver la selección activa:
-
-```bash
 npm run qat -- env show
-```
-
-Cambiar de combinación:
-
-```bash
 npm run qat -- env use qa admin
 npm run qat -- env use qa customer
 npm run qat -- env use staging qa-user
 ```
 
 `env use` guarda `QAT_ENV` y `QAT_PROFILE` como selección activa. Qat no imprime passwords.
-
-### Perfil por defecto
-
-Cada ambiente puede definir `defaultProfile`. Esto permite que el ambiente tenga una identidad habitual y sólo tengas que elegir otro perfil cuando el test lo requiera.
-
-### Modo simple / compatibilidad
 
 Si no querés usar perfiles todavía, el formato anterior sigue funcionando:
 
@@ -149,8 +136,6 @@ QAT_BASE_URL=https://qa.tuapp.com
 QAT_USER=usuario_qa
 QAT_PASSWORD=password_qa
 ```
-
-No es obligatorio migrar inmediatamente.
 
 ## 6. Verificar configuración
 
@@ -163,14 +148,14 @@ npm run doctor
 - Claude CLI disponible o no;
 - Jira configurado o no;
 - modo de Xray;
-- ambiente activo;
-- perfil activo;
+- si `XRAY_MODE=api`, si Xray Cloud puede autenticarse;
+- ambiente y perfil activos;
 - URL activa;
 - si existen credenciales de prueba.
 
-Nunca muestra passwords ni tokens.
+Nunca muestra passwords, API tokens, client IDs ni client secrets.
 
-Antes de una ejecución importante conviene usar `env show` o `doctor` para confirmar que el contexto activo es el correcto.
+Si la API de Xray no autentica, `doctor` recomienda usar temporalmente `XRAY_MODE=export`.
 
 ## 7. Usar lenguaje natural
 
@@ -184,21 +169,41 @@ npm run qat -- "adjunta ./evidence/error-login.png a QA-123"
 
 Qat intenta interpretar localmente pedidos frecuentes para ahorrar tokens y usa Claude como fallback.
 
-La selección de ambiente/perfil todavía se hace mediante `env use`. El objetivo inmediato es soportar también frases como `usa QA como admin` sin perder la validación explícita de qué contexto quedó activo.
-
 ## 8. Crear casos en Xray
 
 ```bash
 npm run qat -- "crea los tests de QA-123 en Xray"
 ```
 
-Con `XRAY_MODE=api`, Qat intenta crear/actualizar Tests.
+### Con `XRAY_MODE=api`
 
-Con `XRAY_MODE=export`, genera un archivo importable como:
+Qat:
+
+1. lee el ticket Jira origen;
+2. genera casos estructurados;
+3. autentica contra Xray Cloud con `XRAY_CLIENT_ID` y `XRAY_CLIENT_SECRET`;
+4. busca Tests existentes usando labels estables de Qat;
+5. si no existe, crea un Test mediante la API GraphQL de Xray Cloud;
+6. para Tests manuales, envía los pasos y expected results;
+7. vincula el Test creado al ticket Jira origen.
+
+Antes de escribir podés usar:
+
+```bash
+npm run qat -- xray-sync QA-123 --dry-run
+```
+
+En v0.7 los Tests ya existentes se detectan y no se duplican. La actualización completa de sus pasos existentes queda para la próxima iteración.
+
+### Con `XRAY_MODE=export`
+
+Qat genera un archivo importable como:
 
 ```text
 artifacts/QA-123-xray-import.csv
 ```
+
+También puede configurarse `XRAY_EXPORT_FORMAT=json`.
 
 ## 9. Flujo recomendado por ticket
 
@@ -207,17 +212,16 @@ artifacts/QA-123-xray-import.csv
 3. Analizá el ticket.
 4. Generá casos.
 5. Revisá cobertura y ambigüedades.
-6. Sincronizá/exportá a Xray.
-7. Ejecutá las pruebas.
-8. Registrá PASS/FAIL/BLOCKED/TODO.
-9. Adjuntá evidencia.
-10. Publicá el Test Execution cuando corresponda.
-
-Si un mismo caso debe validarse con varios roles, cambiá únicamente el perfil manteniendo el mismo ambiente. Si debe repetirse en otra instalación, cambiá ambiente y elegí el perfil correspondiente.
+6. Hacé `xray-sync --dry-run` si usás API.
+7. Sincronizá o exportá a Xray.
+8. Ejecutá las pruebas.
+9. Registrá PASS/FAIL/BLOCKED/TODO.
+10. Adjuntá evidencia.
+11. Publicá el Test Execution cuando corresponda.
 
 ## 10. Registrar una ejecución
 
-En v0.6 los Test Executions completos todavía usan JSON.
+Los Test Executions completos todavía usan JSON.
 
 ```bash
 cp examples/execution.example.json execution.json
@@ -232,10 +236,10 @@ Estados permitidos: `PASS`, `FAIL`, `BLOCKED`, `TODO`.
 - `.env` no se sube a Git.
 - `.qat/environments.json` no se sube a Git.
 - passwords/tokens no se imprimen.
+- credenciales de Xray Cloud no se mandan a Claude.
 - passwords de prueba no se mandan a Claude.
 - evidencias no se mandan al LLM.
 - Claude interpreta intención; Qat ejecuta las acciones.
-- `env show` permite comprobar el contexto sin revelar secretos.
 - `--dry-run` permite revisar cambios antes de escribir.
 
 ## 12. Ahorro de tokens
@@ -281,40 +285,41 @@ Si la empresa usa un wrapper, configurá `CLAUDE_COMMAND`.
 
 Revisá `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` y permisos.
 
+### Xray Cloud API no autentica
+
+Ejecutá:
+
+```bash
+npm run doctor
+```
+
+Revisá `XRAY_CLIENT_ID`, `XRAY_CLIENT_SECRET` y que la API key pertenezca a un usuario con permisos suficientes en Xray/Jira.
+
+Si no podés obtener acceso API, cambiá a:
+
+```env
+XRAY_MODE=export
+XRAY_EXPORT_FORMAT=csv
+```
+
 ### No tengo API de Xray
 
 Ejecutá `npm run setup`, indicá que usás Xray y que no tenés API. Qat usará `XRAY_MODE=export`.
 
-### No encuentra el ambiente
-
-Revisá `QAT_ENV` y los nombres dentro de `.qat/environments.json`. Después ejecutá:
+### No encuentra el ambiente o perfil
 
 ```bash
 npm run qat -- env list
 ```
 
-### No encuentra el perfil
-
-Revisá `QAT_PROFILE`, `defaultProfile` y los perfiles del ambiente. Para ver las opciones:
-
-```bash
-npm run qat -- env list
-```
-
-### Quiero un solo ambiente con varios usuarios
-
-Definí sólo `qa` y agregá todos los perfiles necesarios dentro de `qa.profiles`. No dupliques `baseUrl` para cada usuario.
-
-### QA y staging usan nombres de usuario distintos
-
-Definí el mismo nombre lógico de perfil en ambos ambientes, por ejemplo `admin`, pero asignale a cada uno sus propias credenciales. Así el rol sigue siendo reconocible aunque las cuentas reales sean diferentes.
+Revisá `QAT_ENV`, `QAT_PROFILE`, `defaultProfile` y `.qat/environments.json`.
 
 ## 15. Próximos pasos
 
+- actualizar completamente los pasos de Tests existentes vía Xray Cloud;
 - cambiar ambiente/perfil también por lenguaje natural;
 - ejecutar un mismo flujo con varios perfiles/roles;
 - resultados y evidencias completamente por lenguaje natural;
-- adapter nativo para Xray Cloud;
 - Test Runs nativos de Xray;
 - perfiles configurables de importación;
 - Test Plans/suites;
