@@ -1,12 +1,12 @@
 # Qat
 
-Qat es un harness simple para ayudar a QA manuales a convertir tickets en planes/casos de prueba, sincronizarlos con Xray y publicar resultados/evidencias nuevamente en Jira.
+Qat es un harness simple para ayudar a QA manuales a convertir tickets en planes/casos de prueba, sincronizarlos con Xray y publicar ejecuciones, resultados y evidencias nuevamente en Jira.
 
 Está pensado para funcionar **sin API de Claude**: usa `claude` por CLI cuando la empresa ya provee acceso de esa forma. La arquitectura queda abierta a otros proveedores.
 
 ## Estado actual
 
-Versión **0.2.0**.
+Versión **0.3.0**.
 
 Incluye:
 
@@ -16,19 +16,21 @@ Incluye:
 - salida JSON estructurada para Xray;
 - creación y actualización idempotente de issues tipo `Test`;
 - link automático entre ticket origen y Test;
-- comentarios de resultados en Jira;
-- adjuntos de evidencias;
+- creación de issues tipo `Test Execution`;
+- resultados `PASS`, `FAIL`, `BLOCKED` y `TODO` por caso;
+- evidencias adjuntas a la ejecución;
+- comentario final automático en el ticket origen;
 - caché local y presupuesto de contexto para reducir tokens;
-- modo `--dry-run` para probar el sync sin modificar Jira.
+- modo `--dry-run` para inspeccionar cambios antes de tocar Jira.
 
 ## Requisitos
 
 - Node.js 18+
 - Claude CLI instalado y autenticado (`claude --version`)
 - Jira Cloud accesible por REST
-- Xray instalado/configurado en Jira para usar `xray-sync`
+- Xray instalado/configurado en Jira para usar `xray-sync` y `execute`
 
-> La v0.2 usa Jira REST API v3. Jira Server/Data Center necesitará un adapter específico en una versión posterior.
+> La versión actual usa Jira REST API v3. Jira Server/Data Center necesitará un adapter específico.
 
 ## Instalación
 
@@ -53,18 +55,20 @@ JIRA_API_TOKEN=tu_token
 
 XRAY_ENABLED=true
 XRAY_TEST_ISSUE_TYPE=Test
+XRAY_EXECUTION_ISSUE_TYPE=Test Execution
 XRAY_LINK_TYPE=Tests
+XRAY_EXECUTION_LINK_TYPE=Tests
 
 TOKEN_BUDGET=12000
 ```
 
 No subas `.env` al repositorio.
 
-### Proyecto de Tests
+### Proyecto de Tests y ejecuciones
 
-Por defecto, Qat crea los Tests en el mismo proyecto que el ticket origen.
+Por defecto, Qat crea Tests y Test Executions en el mismo proyecto que el ticket origen.
 
-Para guardarlos en otro proyecto:
+Para usar otro proyecto:
 
 ```env
 XRAY_PROJECT_KEY=QA
@@ -81,15 +85,16 @@ XRAY_TEST_TYPE_VALUE=Manual
 
 Si no hace falta, dejá `XRAY_TEST_TYPE_FIELD` vacío.
 
-### Tipo de link
+### Tipos de link
 
-Qat usa por defecto:
+Por defecto:
 
 ```env
 XRAY_LINK_TYPE=Tests
+XRAY_EXECUTION_LINK_TYPE=Tests
 ```
 
-Si tu Jira/Xray usa otro nombre para el link entre requisito y Test, reemplazalo por el nombre exacto configurado en Jira.
+Si tu Jira/Xray usa otros nombres, reemplazalos por los nombres exactos configurados en Jira.
 
 ## Uso rápido
 
@@ -99,59 +104,43 @@ Verificar instalación:
 npm run doctor
 ```
 
-Ejecutar tests internos del proyecto:
+Ejecutar tests internos:
 
 ```bash
 npm test
 ```
 
-### Generar casos para revisión
+### 1. Generar casos para revisión
 
 ```bash
 npm run qat -- generate QA-123
 ```
 
-Guardar Markdown en `artifacts/`:
+Guardar Markdown:
 
 ```bash
 npm run qat -- generate QA-123 --save
 ```
 
-### Probar qué enviaría a Xray
-
-Este es el comando recomendado antes del primer sync:
+### 2. Probar el sync con Xray
 
 ```bash
 npm run qat -- xray-sync QA-123 --dry-run --save
 ```
 
-Claude devuelve casos estructurados y Qat muestra qué issues crearía o actualizaría, pero **no modifica Jira**.
-
-El JSON generado queda en:
+El JSON estructurado queda en:
 
 ```text
 artifacts/QA-123-xray.json
 ```
 
-### Crear o actualizar Tests en Xray
-
-Cuando el dry-run se vea correcto:
+### 3. Crear o actualizar Tests
 
 ```bash
 npm run qat -- xray-sync QA-123
 ```
 
-Para cada caso Qat:
-
-1. genera un ID estable, por ejemplo `TC-001`;
-2. busca un Test previo asociado al ticket + ID;
-3. si existe, lo actualiza;
-4. si no existe, crea un issue tipo `Test`;
-5. agrega el link entre el ticket origen y el Test.
-
-Esto evita duplicar Tests al repetir el comando.
-
-Qat identifica los Tests con labels similares a:
+Para cada caso Qat usa labels estables similares a:
 
 ```text
 qat
@@ -159,13 +148,67 @@ qat-source-qa-123
 qat-case-tc-001
 ```
 
-### Publicar resultados
+Esto permite actualizar Tests existentes en lugar de duplicarlos.
+
+### 4. Registrar una ejecución
+
+Copiá el ejemplo:
+
+```bash
+cp examples/execution.example.json execution.json
+```
+
+Marcá cada caso con uno de estos estados:
+
+```text
+PASS
+FAIL
+BLOCKED
+TODO
+```
+
+Cuando el caso ya existe en Xray, agregá su `key` para vincularlo a la ejecución:
+
+```json
+{
+  "id": "TC-002",
+  "key": "QA-502",
+  "title": "Login con password inválido",
+  "status": "FAIL",
+  "note": "No se muestra el mensaje esperado",
+  "evidence": ["./evidence/TC-002-login-error.png"]
+}
+```
+
+Primero probá:
+
+```bash
+npm run qat -- execute QA-123 execution.json --dry-run
+```
+
+Después publicá:
+
+```bash
+npm run qat -- execute QA-123 execution.json
+```
+
+Qat hará lo siguiente:
+
+1. valida todos los estados;
+2. crea un issue `Test Execution`;
+3. lo vincula al ticket origen;
+4. vincula los Tests que tengan `key`;
+5. adjunta las evidencias al Test Execution;
+6. agrega a la ejecución el detalle de PASS/FAIL/BLOCKED/TODO;
+7. comenta el ticket origen con el resumen y la clave de la ejecución.
+
+### Comentario manual
 
 ```bash
 npm run qat -- comment QA-123 --status passed --summary "Smoke OK"
 ```
 
-### Adjuntar evidencia
+### Evidencia manual
 
 ```bash
 npm run qat -- evidence QA-123 ./evidence/login.png
@@ -180,8 +223,6 @@ npm run qat -- --help
 ## Claude por CLI
 
 Qat no necesita una API key de Anthropic cuando `LLM_PROVIDER=claude-cli`. Ejecuta el comando configurado en `CLAUDE_COMMAND` y envía el prompt por stdin.
-
-Comprobación rápida:
 
 ```bash
 claude --version
@@ -200,11 +241,10 @@ CLAUDE_COMMAND=mi-claude-corporativo
 2. `qat generate ABC-123` genera una versión legible de los casos.
 3. QA revisa requisitos, cobertura y ambigüedades.
 4. `qat xray-sync ABC-123 --dry-run --save` prepara el sync.
-5. QA revisa el JSON.
-6. `qat xray-sync ABC-123` crea/actualiza Tests.
-7. QA ejecuta las pruebas.
-8. `qat comment` publica el resumen del resultado.
-9. `qat evidence` adjunta capturas, logs u otras evidencias.
+5. `qat xray-sync ABC-123` crea/actualiza Tests.
+6. QA ejecuta las pruebas y completa `execution.json`.
+7. `qat execute ABC-123 execution.json --dry-run` valida el reporte.
+8. `qat execute ABC-123 execution.json` crea el Test Execution, adjunta evidencias y comenta el ticket.
 
 ## Optimización de tokens
 
@@ -231,8 +271,11 @@ src/
   prompts.js
   cache.js
   xray.js
+  execution.js
 test/
-  xray.test.js
+  execution.test.js
+examples/
+  execution.example.json
 artifacts/
 evidence/
 ```
@@ -245,20 +288,19 @@ evidence/
 - Las evidencias se adjuntan directamente a Jira y no pasan por Claude.
 - `--dry-run` permite inspeccionar el resultado antes de modificar Jira/Xray.
 
-## Limitaciones v0.2
+## Limitaciones v0.3
 
-- Xray cambia algunos custom fields según instalación; por eso `Test Type` es configurable.
-- El nombre del issue type (`Test`) y del link (`Tests`) también puede variar.
-- Los pasos se guardan inicialmente en la descripción del Test. El próximo adapter específico de Xray podrá escribir directamente en los campos nativos de pasos cuando se detecte/configure su esquema.
+- Xray cambia custom fields y nombres de issue/link según instalación, por eso son configurables.
+- Los pasos de los Tests siguen guardándose inicialmente en la descripción.
+- Los estados PASS/FAIL/BLOCKED/TODO quedan registrados en la descripción del Test Execution y el comentario resumen. Escribir directamente el estado nativo de cada Test Run de Xray requiere el adapter específico de la API/GraphQL correspondiente a la edición instalada.
 - La integración actual apunta a Jira Cloud.
 
 ## Próximos pasos
 
 - detectar automáticamente metadata/campos de Xray;
 - escribir pasos directamente en el modelo nativo de Xray;
-- Test Executions y Test Plans;
-- registrar resultados Pass/Fail por Test;
-- adjuntar evidencias a Test Executions;
+- adapter nativo para actualizar Test Runs dentro de Test Executions;
+- Test Plans y suites;
 - importar suites existentes;
-- adapters adicionales para Jira Server/Data Center;
-- mejorar la memoria/caché para reducir todavía más tokens.
+- adapters para Jira Server/Data Center;
+- mejorar memoria/caché para reducir todavía más tokens.
