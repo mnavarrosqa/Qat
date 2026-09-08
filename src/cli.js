@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { config } from './config.js';
-import { getIssue, addComment, attachEvidence } from './jira.js';
+import { getIssueContext, addComment, attachEvidence } from './jira.js';
 import { runLLM } from './llm.js';
 import { testCasesPrompt, xrayCasesPrompt } from './prompts.js';
 import { cached } from './cache.js';
@@ -10,10 +10,14 @@ import { parseStructuredCases, syncTestCases, exportTestCases } from './xray.js'
 import { checkXrayCloud } from './xray-cloud.js';
 import { loadExecution, publishExecution } from './execution.js';
 import { interpretNatural } from './natural.js';
-import { runSetup } from './setup.js';
+import { setup } from './setup-bootstrap.js';
 import { listEnvironments, resolveEnvironment } from './environments.js';
 
-const cfg = config();
+import { interactiveSession } from './interactive.js';
+import { runTicketRequest } from './ticket-session.js';
+import { browserTestTicket } from './browser-testing.js';
+
+const cfg = process.argv[2] === 'setup' ? null : config();
 const argv = process.argv.slice(2);
 const [command, ...args] = argv;
 const knownCommands = new Set(['setup', 'doctor', 'env', 'generate', 'xray-sync', 'execute', 'comment', 'evidence']);
@@ -21,7 +25,7 @@ const has = (flag) => args.includes(flag);
 const value = (flag, fallback = '') => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : fallback; };
 
 function help() {
-  console.log(`Qat v0.7\n\nPrimer uso:\n  qat setup\n\nUso recomendado (lenguaje natural):\n  qat "analiza QA-123 y genera casos de prueba"\n  qat "crea los tests de QA-123 en Xray"\n  qat "comenta QA-123 indicando que el smoke pasó"\n  qat "adjunta ./evidence/error.png a QA-123"\n\nAmbientes y perfiles:\n  qat env list\n  qat env show\n  qat env use qa admin\n\nComandos clásicos:\n  setup\n  doctor\n  env list|show|use <ambiente> [perfil]\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
+  console.log(`Qat v0.7\n\nModo conversacional: qat (sin argumentos)\n  Escribí: probemos el ticket AGDCF-1234\n  Para terminar: salir\n\nPrimer uso:\n  qat setup\n\nUso recomendado (lenguaje natural):\n  qat "probemos el ticket AGDCF-1234"\n  qat "analiza QA-123 y genera casos de prueba"\n  qat "crea los tests de QA-123 en Xray"\n  qat "comenta QA-123 indicando que el smoke pasó"\n  qat "adjunta ./evidence/error.png a QA-123"\n\nAmbientes y perfiles:\n  qat env list\n  qat env show\n  qat env use qa admin\n\nComandos clásicos:\n  setup\n  doctor\n  env list|show|use <ambiente> [perfil]\n  generate <ISSUE> [--save]\n  xray-sync <ISSUE> [--dry-run] [--save]\n  execute <ISSUE> <archivo.json> [--dry-run]\n  comment <ISSUE> --status <status> --summary <texto>\n  evidence <ISSUE> <archivo>\n`);
 }
 
 async function setEnvValue(content, key, value) {
@@ -73,7 +77,7 @@ async function environmentCommand() {
 }
 
 async function generate(key, save = false) {
-  const issue = await getIssue(cfg, key);
+  const issue = await getIssueContext(cfg, key);
   const prompt = testCasesPrompt(issue, cfg.tokenBudget);
   const output = await cached(`${key}:${prompt}`, () => runLLM(cfg, prompt));
   console.log(output);
@@ -86,7 +90,7 @@ async function generate(key, save = false) {
 }
 
 async function xraySync(key, { dryRun = false, save = false } = {}) {
-  const issue = await getIssue(cfg, key);
+  const issue = await getIssueContext(cfg, key);
   const prompt = xrayCasesPrompt(issue, cfg.tokenBudget);
   const raw = await cached(`xray:${key}:${prompt}`, () => runLLM(cfg, prompt));
   const testCases = parseStructuredCases(raw);
@@ -109,13 +113,14 @@ async function xraySync(key, { dryRun = false, save = false } = {}) {
   return results;
 }
 
-async function runNatural(input) {
+async function runNatural(input, terminal) {
   const intent = await interpretNatural(cfg, input);
   if (intent.action === 'help') {
     if (intent.summary) console.log(intent.summary);
     return help();
   }
   if (!intent.issue) throw new Error('No pude identificar el ticket Jira. Ejemplo: QA-123');
+  if (intent.action === 'test-ticket') return runTicketRequest(intent.issue, input, { terminal, runTests: (key, options) => browserTestTicket(cfg, key, options) });
   if (intent.action === 'generate') return generate(intent.issue, Boolean(intent.save));
   if (intent.action === 'xray-sync') return xraySync(intent.issue, { dryRun: Boolean(intent.dryRun), save: Boolean(intent.save) });
   if (intent.action === 'comment') {
@@ -151,9 +156,10 @@ async function doctor() {
 }
 
 async function main() {
-  if (!command || command === '--help' || command === '-h') return help();
+  if (!command) return process.stdin.isTTY && process.stdout.isTTY ? interactiveSession({ run: runNatural }) : help();
+  if (command === '--help' || command === '-h') return help();
   if (!knownCommands.has(command)) return runNatural(argv.join(' '));
-  if (command === 'setup') return runSetup();
+  if (command === 'setup') return setup();
   if (command === 'env') return environmentCommand();
   if (command === 'doctor') return doctor();
   if (command === 'generate') {

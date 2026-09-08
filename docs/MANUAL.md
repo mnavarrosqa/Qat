@@ -14,8 +14,6 @@ Requisitos:
 ```bash
 git clone https://github.com/mnavarrosqa/Qat.git
 cd Qat
-npm install
-cp .env.example .env
 ```
 
 ## 2. Ejecutar el setup
@@ -24,7 +22,11 @@ cp .env.example .env
 npm run setup
 ```
 
-El setup pregunta si usás Xray y si tenés acceso a la API de Xray Cloud.
+Primero verifica Node.js 18+, npm, las dependencias del proyecto y Claude CLI. Si faltan paquetes o Claude, ofrece instalarlos y vuelve a comprobarlos antes de continuar. Podés rechazar la instalación; el setup termina sin guardar configuración. Si falta Node.js/npm, instalalos desde https://nodejs.org antes de ejecutar `npm run setup`. La instalación de Claude usa el [paquete oficial](https://code.claude.com/docs/en/installation).
+
+El setup crea `.env` y pregunta por URL, email y token de Jira, comando de Claude, Xray, clave del proyecto de destino para Tests/ejecuciones y modo API o exportación. También configura el ambiente y usuario de pruebas, o selecciona un ambiente/perfil del archivo existente.
+
+Enter conserva los valores actuales. Los secretos no se muestran en pantalla. Ctrl+C cancela sin guardar. El archivo queda accesible sólo para tu usuario. No hace falta copiar `.env.example`.
 
 Con API:
 
@@ -35,7 +37,7 @@ XRAY_CLIENT_ID=tu_client_id
 XRAY_CLIENT_SECRET=tu_client_secret
 ```
 
-Qat no solicita ni imprime esos secretos durante el setup. Guardalos solamente en `.env` o variables de entorno y validalos con:
+El asistente solicita las credenciales de Xray sin mostrarlas en pantalla. Para validar las conexiones:
 
 ```bash
 npm run doctor
@@ -53,7 +55,7 @@ En modo export, Qat genera archivos importables en `artifacts/`.
 
 ## 3. Configurar Jira
 
-En `.env`:
+El asistente ya guarda estos datos. También podés editarlos manualmente en `.env`:
 
 ```env
 JIRA_BASE_URL=https://tuempresa.atlassian.net
@@ -159,6 +161,17 @@ Si la API de Xray no autentica, `doctor` recomienda usar temporalmente `XRAY_MOD
 
 ## 7. Usar lenguaje natural
 
+Para no repetir `npm run qat --`, instalá el comando una vez desde el proyecto:
+
+```bash
+npm link
+qat
+```
+
+Dentro de QAT escribí directamente `probemos el ticket AGDCF-1234`. Te preguntará la modalidad y, al terminar, volverá a `qat>` para otro pedido. `salir` o Ctrl+C cierra la conversación. El comando instalado usa la configuración de la carpeta del proyecto incluso al abrirlo desde otra carpeta. También podés ejecutar un solo pedido con `qat probemos el ticket AGDCF-1234`.
+
+Los comandos de npm siguen disponibles:
+
 ```bash
 npm run qat -- "analiza QA-123 y genera casos de prueba"
 npm run qat -- "genera los casos de QA-123 y guárdalos"
@@ -168,6 +181,28 @@ npm run qat -- "adjunta ./evidence/error-login.png a QA-123"
 ```
 
 Qat intenta interpretar localmente pedidos frecuentes para ahorrar tokens y usa Claude como fallback.
+
+### Probar un ticket de forma interactiva
+
+```bash
+npm run qat -- "probemos el ticket AGDCF-1234"
+```
+
+Qat pregunta:
+
+1. **Generar casos de prueba**: analiza el contexto y guarda los casos en Markdown.
+2. **Solo pruebas y comentario PASS/FAIL**: ejecuta verificaciones en Chromium con el ambiente/perfil activo y muestra una vista previa y, con tu confirmación, publica el resultado en el ticket, sin crear Tests ni Test Executions en Xray.
+0. **Cancelar**.
+
+La ejecución automática requiere Chromium. En una instalación nueva ejecutá `npx playwright install chromium` una vez. Las pruebas siempre se ejecutan en headless. Cuando hace falta login o 2FA, Qat abre un navegador visible y te pide conectarte allí. Volvé a la aplicación y escribí `listo` en la terminal para retomar; `cancelar` deja el caso bloqueado. No ingreses contraseñas ni códigos 2FA en la terminal.
+
+Ambos modos leen descripción, todos los comentarios y campos adicionales. Adjuntos y tickets vinculados se incluyen como referencias; su contenido no se descarga automáticamente. Si el contexto supera `TOKEN_BUDGET`, Qat pide aumentarlo sin recortar información silenciosamente.
+
+El modo automático prepara verificaciones internas y usa Claude para decidir acciones de navegador, sin ejecutar código generado. Cada caso empieza con un contexto de navegador nuevo que reutiliza la autenticación manual de esta ejecución. Cookies, localStorage, IndexedDB y sessionStorage se transfieren en memoria, sin guardarse en los informes. Soporta controles accesibles, campos, selección y comprobaciones de texto visible. Usa las credenciales del perfil localmente. Las instrucciones y capturas de la página pueden contener datos del ambiente; el texto observado se envía a Claude con las credenciales configuradas ocultas.
+
+**PASS** indica que las verificaciones ejecutadas pasaron; **FAIL**, que no apareció un resultado esperado; **BLOCKED**, que no pudo completar la cobertura (por ejemplo, autenticación cancelada o no transferible, controles no accesibles, datos faltantes o límite de pasos). PASS requiere al menos una comprobación por caso. Es una ejecución guiada por IA: conviene revisar el detalle de cobertura, no equivale a una suite determinística mantenida manualmente.
+
+El informe y las capturas anotadas se guardan en `artifacts/<ticket>-<fecha>/`. Qat captura cada comprobación y el resultado final, con caso, PASS/FAIL y detalle de lo observado o faltante. Oculta campos de entrada en las capturas y no captura la autenticación manual. Antes de escribir en Jira, muestra el comentario completo y la lista de capturas a adjuntar, y pregunta `¿Publicar este comentario y adjuntar estas evidencias? [sí/no] (no)`. Sólo `sí` autoriza la publicación. Enter, `no`, cancelación o falta de terminal interactiva conservan el informe y la vista previa localmente, sin subir adjuntos ni comentarios. Tras confirmar, adjunta las imágenes y publica el comentario con resultados, anotaciones y enlaces a los adjuntos. Si falla una subida, muestra el comentario actualizado y vuelve a pedir aprobación antes de publicarlo; los adjuntos ya subidos permanecen en Jira aunque rechaces ese comentario. si falla el comentario, conserva el informe y los adjuntos que ya subió. No reintenta publicar automáticamente. Este modo no requiere Xray.
 
 ## 8. Crear casos en Xray
 
@@ -324,3 +359,11 @@ Revisá `QAT_ENV`, `QAT_PROFILE`, `defaultProfile` y `.qat/environments.json`.
 - perfiles configurables de importación;
 - Test Plans/suites;
 - optimización continua de tokens.
+
+### El ambiente tarda en cargar o todos los casos quedan bloqueados
+
+QAT espera que la navegación comience y que la página tenga contenido utilizable, en lugar de depender sólo de `DOMContentLoaded`. Cada espera de navegación/contenido admite 45 segundos y se reintenta una vez ante un timeout o error de red. Podés ajustar `QAT_NAVIGATION_TIMEOUT_MS` en `.env` (por ejemplo, `60000`).
+
+Si no logra abrir el ambiente, ofrece `reintentar` después de revisar conexión/VPN, `login` para abrir el navegador visible o `cancelar`. Un bloqueo de acceso común detiene los casos pendientes y se comenta una sola vez en Jira con la cantidad e IDs de los casos no ejecutados. El diagnóstico técnico queda en el informe local. Los comentarios no incluyen códigos de color de la terminal.
+
+Un bloqueo por requisitos o diseño faltante es diferente: revisar el acceso al ambiente no resuelve la falta de información del caso.

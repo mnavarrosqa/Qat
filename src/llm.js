@@ -1,9 +1,12 @@
 import { spawn } from 'node:child_process';
 
-export function runClaude(command, prompt) {
+export function runClaude(command, prompt, extraArgs = []) {
   return new Promise((resolve, reject) => {
     const parts = command.trim().split(/\s+/);
-    const child = spawn(parts[0], parts.slice(1), { stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32' });
+    const child = spawn(parts[0], [...parts.slice(1), ...extraArgs], { stdio: ['pipe', 'pipe', 'pipe'], shell: process.platform === 'win32' });
+    const timer = extraArgs.length ? setTimeout(() => { child.kill(); reject(new Error('Claude excedió el tiempo de respuesta (120 segundos).')); }, 120000) : null;
+    child.on('close', () => clearTimeout(timer));
+    child.on('error', () => clearTimeout(timer));
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (d) => stdout += d);

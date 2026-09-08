@@ -40,7 +40,9 @@ export function config() {
     qatBaseUrl: selected.baseUrl,
     qatUser: selected.user,
     qatPassword: selected.password,
+    qatLoginOrigins: (process.env.QAT_LOGIN_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean).map(s => new URL(s).origin),
     qatEnvironmentSource: selected.source,
+    navigationTimeout: Number(process.env.QAT_NAVIGATION_TIMEOUT_MS || 45000),
     tokenBudget: Number(process.env.TOKEN_BUDGET || 12000),
   };
 }

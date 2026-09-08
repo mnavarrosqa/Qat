@@ -17,22 +17,16 @@ Requisitos: Node.js 18+, Claude CLI instalado/autenticado y acceso a Jira Cloud.
 ```bash
 git clone https://github.com/mnavarrosqa/Qat.git
 cd Qat
-npm install
-cp .env.example .env
 npm run setup
 ```
 
-El setup pregunta si usás Xray y si tenés acceso por API. Si no tenés API, Qat configura automáticamente modo `export` y genera CSV/JSON importable en `artifacts/`.
+Primero verifica Node.js 18+, npm, las dependencias del proyecto y Claude CLI. Si faltan paquetes o Claude, ofrece instalarlos y vuelve a comprobarlos antes de continuar. Podés rechazar la instalación; el setup termina sin guardar configuración. Si falta Node.js/npm, instalalos desde https://nodejs.org antes de ejecutar `npm run setup`. La instalación de Claude usa el [paquete oficial](https://code.claude.com/docs/en/installation).
 
-Después completá Jira en `.env`:
+El asistente crea `.env` y pregunta por la URL de Jira, email, token, comando de Claude, uso de Xray, proyecto de destino y modo API o exportación. También permite configurar el ambiente, la URL de la aplicación y el usuario de pruebas; si ya existe un archivo de ambientes, permite seleccionar un ambiente y perfil existentes.
 
-```env
-LLM_PROVIDER=claude-cli
-CLAUDE_COMMAND=claude
-JIRA_BASE_URL=https://tuempresa.atlassian.net
-JIRA_EMAIL=tu.email@empresa.com
-JIRA_API_TOKEN=tu_token
-```
+Los tokens y contraseñas se ingresan sin mostrarse en pantalla. Enter conserva los valores actuales y Ctrl+C cancela sin guardar. La configuración se guarda con permisos de lectura/escritura sólo para tu usuario. No hace falta copiar ni editar `.env` a mano.
+
+Luego validá las conexiones con `npm run doctor`.
 
 `.env` está ignorado por Git. Nunca guardes passwords/tokens reales en el repositorio.
 
@@ -230,3 +224,45 @@ evidence/
 - [`.env.example`](.env.example): configuración de referencia.
 - [`.qat/environments.example.json`](.qat/environments.example.json): ejemplo de ambientes y usuarios de prueba.
 - [`examples/execution.example.json`](examples/execution.example.json): ejemplo de Test Execution.
+
+### Probar un ticket
+
+```bash
+npm run qat -- "probemos el ticket AGDCF-1234"
+```
+
+El pedido ejecuta directamente las pruebas con Playwright headless y publica PASS/FAIL/BLOCKED en Jira, incluyendo capturas disponibles como adjuntos enlazados. Lee descripción y comentarios; cubre el happy path y las verificaciones explícitas del ticket. Para generar casos sin ejecutar, pedí «genera casos de AGDCF-1234». Si hace falta login o 2FA, Qat abre Chromium visible, espera que te conectes y retoma en headless. No requiere Xray para la segunda opción. Para instalar el navegador: `npx playwright install chromium`. Ver alcance y limitaciones en [el manual](docs/MANUAL.md#probar-un-ticket-de-forma-interactiva).
+
+### Conversar con QAT sin repetir comandos
+
+Una vez instalado el comando con `npm link` desde la carpeta del proyecto, ejecutá `qat` desde cualquier carpeta. El comando usa la configuración y guarda los archivos en ese proyecto.
+
+```text
+qat> probemos el ticket AGDCF-1234
+```
+
+La ejecución comienza directamente. Al terminar podés pedir otro ticket. Escribí `salir` o presioná Ctrl+C para cerrar. También funciona `qat probemos el ticket AGDCF-1234` para un único pedido. El texto sin prefijo se escribe dentro de QAT, no directamente en la terminal del sistema.
+
+El comando «probá AGDCF-1234» autoriza el flujo de prueba y publicación en ese ticket. Para conservar resultados y evidencias sólo en esta Mac, usá «probá AGDCF-1234 sin publicar». La publicación incluye cobertura, bloqueos y errores de captura o adjuntos; nunca presenta un bloqueo como PASS. Los pedidos de login/2FA pueden requerir intervención.
+
+### Verificaciones y diagnóstico de ejecución
+
+El ejecutor asigna identificadores a los resultados esperados de cada paso (`step-1`, etc.) y al resultado final (`result`). PASS requiere comprobar todos ellos; una respuesta `done` del modelo no basta. El informe local conserva los casos generados, la cobertura por resultado, las observaciones y el historial de verificaciones.
+
+Además de texto exacto, admite valor de campos, controles habilitados/deshabilitados, selección de checkbox, visibilidad y URL exacta. Los elementos ambiguos no se eligen automáticamente para declarar éxito. Las verificaciones tienen una espera acotada para permitir actualizaciones de la página.
+
+Una diferencia observada se informa como FAIL. Los bloqueos distinguen cobertura incompleta, límite de pasos, precondiciones o capacidades faltantes, respuesta inválida del modelo, elementos no disponibles, autenticación y errores de ejecución. El detalle se guarda en `category` dentro del informe local.
+
+La cobertura corresponde a los casos generados: requiere revisión humana para confirmar que representan todos los requisitos del ticket. La interpretación de cada requisito y su correspondencia con la comprobación sigue dependiendo del modelo. La persistencia debe verificarse volviendo al registro; un mensaje de guardado por sí solo no la demuestra. La integración con Test Runs nativos de Xray sigue pendiente.
+
+Cuando el ticket no indica dónde probar, Qat debe descubrir el flujo desde el ambiente configurado usando menús, módulos y búsqueda interna. La generación de casos no considera una ruta ausente como una ambigüedad funcional. Si el ejecutor propone bloquear por navegación, recibe hasta dos oportunidades adicionales para explorar; el límite total de pasos sigue vigente. Si no encuentra el flujo, registra `navigation_not_found` y conserva las acciones intentadas en el historial. La exploración depende de los controles accesibles disponibles en la aplicación.
+
+### Credenciales y login automático
+
+Al entrar al flujo de autenticación, Qat intenta completar un formulario estándar de usuario/email y contraseña con las credenciales activas. No envía estos valores al modelo. Si el formulario es ambiguo, el login falla o requiere 2FA, solicita intervención manual.
+
+Por defecto sólo completa credenciales en el origen del ambiente configurado. Si tu login está en otro dominio, configurá explícitamente los orígenes de confianza en `QAT_LOGIN_ORIGINS` (URLs separadas por comas). No agregues dominios que no correspondan a tu proveedor de identidad. Los flujos SSO de varios pasos siguen siendo manuales. Si existe un archivo de ambientes, sus perfiles determinan las credenciales activas en lugar del fallback de `.env`.
+
+### Recuperación de interacciones
+
+Las acciones del modelo se validan antes de ejecutarse. Una respuesta incompleta devuelve instrucciones de corrección y permite continuar; tres respuestas inválidas terminan con un diagnóstico específico. Las referencias de controles son exclusivas de cada observación: una referencia vieja no puede apuntar accidentalmente a otro botón después de un cambio de pantalla. El historial de errores conserva la acción y el control intentados, sin guardar los valores ingresados. Los controles observados incluyen estado deshabilitado, expansión y contexto disponible de formulario, menú o diálogo.

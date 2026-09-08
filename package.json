@@ -6,12 +6,18 @@
   "description": "Natural-language QA harness for Jira/Xray with Claude CLI",
   "scripts": {
     "qat": "node src/cli.js",
-    "setup": "node src/cli.js setup",
+    "setup": "node src/setup-bootstrap.js",
     "doctor": "node src/cli.js doctor",
     "test": "node --test"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "dotenv": "^16.4.5"
+    "dotenv": "^16.4.5",
+    "playwright": "^1.63.0"
+  },
+  "bin": {
+    "qat": "src/launcher.js"
   }
 }

@@ -44,6 +44,24 @@ export async function getIssue(cfg, key) {
   return jiraFetch(cfg, `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description,issuetype,priority,labels,status,project,issuelinks`);
 }
 
+// Read the complete discussion separately: Jira embeds only a page of comments.
+export async function getIssueContext(cfg, key) {
+  const path = `/rest/api/3/issue/${encodeURIComponent(key)}`;
+  const issue = await jiraFetch(cfg, `${path}?fields=*all&expand=names`);
+  const comments = [];
+  let startAt = 0;
+  while (true) {
+    const page = await jiraFetch(cfg, `${path}/comment?startAt=${startAt}&maxResults=100&orderBy=created`);
+    const batch = page?.comments || [];
+    comments.push(...batch);
+    startAt += batch.length;
+    if (page?.isLast === true || startAt >= (page?.total ?? startAt)) break;
+    if (!batch.length) throw new Error('Jira devolvió comentarios incompletos; no se puede analizar el contexto completo.');
+  }
+  issue.fields = { ...issue.fields, comment: { comments, total: comments.length } };
+  return issue;
+}
+
 export async function createIssue(cfg, fields) {
   return jiraFetch(cfg, '/rest/api/3/issue', {
     method: 'POST',
@@ -93,7 +111,7 @@ export async function attachEvidence(cfg, key, filePath) {
   requireJira(cfg);
   const bytes = await fs.readFile(filePath);
   const form = new FormData();
-  form.append('file', new Blob([bytes]), filePath.split(/[\\/]/).pop());
+  form.append('file', new Blob([bytes], { type: filePath.toLowerCase().endsWith('.png') ? 'image/png' : 'application/octet-stream' }), filePath.split(/[\\/]/).pop());
   const response = await fetch(`${cfg.jiraBaseUrl}/rest/api/3/issue/${encodeURIComponent(key)}/attachments`, {
     method: 'POST',
     headers: { Authorization: auth(cfg), Accept: 'application/json', 'X-Atlassian-Token': 'no-check' },

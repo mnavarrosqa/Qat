@@ -20,3 +20,13 @@ test('parses fenced Claude JSON', () => {
   assert.equal(intent.action, 'comment');
   assert.equal(intent.issue, 'QA-123');
 });
+
+test('recognizes a request to test a ticket without choosing its mode', () => {
+  for (const input of ['probemos el ticket AGDCF-1234', 'testeemos agdcf-1234', 'probar AGDCF-1234']) {
+    assert.deepEqual(localNaturalIntent(input), { action: 'test-ticket', issue: 'AGDCF-1234' });
+  }
+});
+
+test('recognizes accented imperatives without LLM interpretation', () => {
+  for (const input of ['probá AGDCF-4981', 'testeá AGDCF-4981']) assert.equal(localNaturalIntent(input).action, 'test-ticket');
+});
